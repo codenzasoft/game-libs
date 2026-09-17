@@ -1,0 +1,64 @@
+plugins {
+    id 'com.diffplug.spotless' version '6.25.0' apply false
+}
+
+subprojects {
+    apply plugin: 'java-library'
+    apply plugin: 'groovy'
+    apply plugin: 'maven-publish'
+    apply plugin: 'com.diffplug.spotless'
+
+    group = 'com.codenzasoft.games'
+    version = '1.0.0-SNAPSHOT'
+
+    java {
+        sourceCompatibility = '17'
+        withSourcesJar()
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        testImplementation(
+                'junit:junit:4.13.2',
+                'org.spockframework:spock-core:2.4-M7-groovy-5.0',
+                'net.bytebuddy:byte-buddy:1.15.11',
+                'org.objenesis:objenesis:3.4',
+        )
+    }
+
+    spotless {
+        java {
+            googleJavaFormat()
+        }
+    }
+
+    compileJava.dependsOn('spotlessApply')
+
+    test {
+        useJUnitPlatform()
+        testLogging {
+            events "passed", "skipped", "failed"
+        }
+    }
+
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                from components.java
+            }
+        }
+        repositories {
+            maven {
+                name = 'GitHubPackages'
+                url = 'https://maven.pkg.github.com/codenzasoft/game-libs'
+                credentials {
+                    username = System.getenv('GITHUB_ACTOR') ?: project.findProperty('gpr.user')
+                    password = System.getenv('GITHUB_TOKEN') ?: project.findProperty('gpr.key')
+                }
+            }
+        }
+    }
+}
