@@ -26,3 +26,19 @@ jobs:
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete old versions (game-common)
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: game-common
+          package-type: maven
+          min-versions-to-keep: 3
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete old versions (game-hearts)
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: game-hearts
+          package-type: maven
+          min-versions-to-keep: 3
+          token: ${{ secrets.GITHUB_TOKEN }}
