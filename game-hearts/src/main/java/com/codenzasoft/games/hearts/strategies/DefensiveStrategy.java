@@ -272,14 +272,19 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
   }
 
   /**
-   * Select a high or low card of the provided suit to lead based on the number of remaining cards
-   * in the suit.
+   * Select a card of the provided suit to lead.
    *
-   * @param round
-   * @param player
-   * @param suit
-   * @param legalCards
-   * @return
+   * <p>Priority order:
+   *
+   * <ol>
+   *   <li>When no opponent is known to be void in the suit (from trick history), lead the highest
+   *       card if an opponent can beat it — everyone must follow suit, so dumping a high card is
+   *       safe.
+   *   <li>Lead the highest definite loser ({@link DefiniteCardClassifier#isDefiniteLoserWhenLead})
+   *       — guaranteed not to win the trick, and leading the highest dumps the most dangerous card
+   *       safely.
+   *   <li>Fall back to the lowest card in the suit.
+   * </ol>
    */
   protected Optional<Card> selectLeadCardOfSuit(
       final RoundState round, final Player player, final Suit suit, final Set<Card> legalCards) {
@@ -287,7 +292,7 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     long inMyHandCount = StrategyHelper.filterSuit(round.getHand(player), suit).count();
     long remainingCount = 13 - playedCount - inMyHandCount;
     if (remainingCount > 0) {
-      if (remainingCount > 4 && !suit.equals(Suit.HEARTS)) {
+      if (!suit.equals(Suit.HEARTS) && !isAnyOpponentVoidInSuit(round, suit, player)) {
         final Optional<Card> high = StrategyHelper.getMaxRank(round.getHand(player), suit);
         if (high.isPresent()) {
           final Card h = high.get();
@@ -298,10 +303,31 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
           if (opponentCanBeat) return high;
         }
       }
+      final Optional<Card> highestLoser =
+          StrategyHelper.filterSuit(legalCards, suit)
+              .filter(c -> DefiniteCardClassifier.isDefiniteLoserWhenLead(c, round, player))
+              .max(Comparator.comparing(Card::getRank));
+      if (highestLoser.isPresent()) return highestLoser;
       return StrategyHelper.getMinRank(round.getHand(player), suit);
     } else {
       return Optional.empty();
     }
+  }
+
+  /**
+   * Returns true if any opponent is known to be void in {@code suit}, determined by inspecting
+   * completed tricks in which that suit was led and an opponent played off-suit.
+   */
+  private boolean isAnyOpponentVoidInSuit(
+      final RoundState round, final Suit suit, final Player player) {
+    return round.tricks().stream()
+        .filter(TrickState::isComplete)
+        .filter(t -> t.getTrump().map(s -> s == suit).orElse(false))
+        .anyMatch(
+            t ->
+                t.cards().stream()
+                    .filter(pc -> !pc.player().equals(player.name()))
+                    .anyMatch(pc -> pc.card().getSuit() != suit));
   }
 
   protected List<Card> selectCardsToPass(

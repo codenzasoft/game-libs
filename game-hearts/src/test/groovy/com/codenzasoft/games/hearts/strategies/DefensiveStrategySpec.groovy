@@ -23,6 +23,7 @@ class DefensiveStrategySpec extends Specification {
     static final Card _2S = c(Suit.SPADES,   Rank.TWO)
     static final Card AC  = c(Suit.CLUBS,    Rank.ACE)
     static final Card KC  = c(Suit.CLUBS,    Rank.KING)
+    static final Card QC  = c(Suit.CLUBS,    Rank.QUEEN)
     static final Card _7C = c(Suit.CLUBS,    Rank.SEVEN)
     static final Card _2C = c(Suit.CLUBS,    Rank.TWO)
     static final Card _3C = c(Suit.CLUBS,    Rank.THREE)
@@ -157,9 +158,10 @@ class DefensiveStrategySpec extends Specification {
         1 * game.playCard(alice, JD)
     }
 
-    def "leads LOW when only a few opponent cards remain in the suit (≤4 threshold)"() {
+    def "leads LOW when no opponent card can beat the lead candidate and no definite loser exists"() {
         given: "9 diamonds already played; alice holds J♦ 3♦; opponents hold only 4♦ 2♦"
-        // remainingCount = 13 - 9 played - 2 alice = 2 (≤ 4) → always lead low
+        // no opponent outranks J♦ → skip high-lead block; neither J♦ nor 3♦ is a definite loser
+        // (2♦ does not outrank 3♦) → fall through to getMinRank
         def strategy = new DefensiveStrategy()
         def game = Mock(HeartsGame)
         def alreadyPlayed = [AD, KD, c(Suit.DIAMONDS, Rank.QUEEN), c(Suit.DIAMONDS, Rank.TEN),
@@ -172,8 +174,62 @@ class DefensiveStrategySpec extends Specification {
         when:
         strategy.yourTurnToPlay(game, state, alice, [JD, _3D] as Set)
 
-        then: "leads 3♦ (low) — few cards remain, low lead is the safe choice"
+        then: "leads 3♦ (low) — falls through to min-rank since no card is a guaranteed loser"
         1 * game.playCard(alice, _3D)
+    }
+
+    def "leads the highest definite loser rather than the lowest card when multiple cards are guaranteed to lose"() {
+        given: "alice holds J♦ (winner — no opponent outranks it), 4♦ and 2♦ (both guaranteed losers)"
+        // no opponent diamond outranks J♦ → opponentCanBeat = false, skip high-lead
+        // all opponent diamonds (5♦–10♦) outrank 4♦ and 2♦ → both are definite losers
+        // highestLoser = 4♦; without this logic the old code would fall through to 2♦ (min)
+        def strategy = new DefensiveStrategy()
+        def game = Mock(HeartsGame)
+        def hands = [
+            "alice": [JD, _4D, _2D],
+            "bob": [_5D, _6D, _7D,
+                    c(Suit.DIAMONDS, Rank.EIGHT),
+                    c(Suit.DIAMONDS, Rank.NINE),
+                    c(Suit.DIAMONDS, Rank.TEN)]
+        ]
+        def round = roundLeading("alice", hands, [])
+        def state = HeartsStateBuilder.state(rounds: [round])
+
+        when:
+        strategy.yourTurnToPlay(game, state, alice, [JD, _4D, _2D] as Set)
+
+        then: "leads 4♦ — dumps the highest guaranteed-loser card rather than the absolute lowest"
+        1 * game.playCard(alice, _4D)
+    }
+
+    def "suppresses the high-lead heuristic when an opponent is known void in the suit"() {
+        given: "carol sluffed diamonds when clubs were led in trick 1 — she is void in clubs"
+        // without void detection: opponentCanBeat(Q♣) = true (A♣) → would lead Q♣
+        // with void detection: skip high block; Q♣ is not a definite loser (6♣ < Q♣); 2♣ is → lead 2♣
+        def strategy = new DefensiveStrategy()
+        def game = Mock(HeartsGame)
+        def voidTrick = new TrickState(1, "bob", [
+            new PlayedCard("bob",   _3C),
+            new PlayedCard("carol", _2D),
+            new PlayedCard("dave",  c(Suit.CLUBS, Rank.FOUR)),
+            new PlayedCard("alice", c(Suit.CLUBS, Rank.FIVE)),
+        ])
+        def currentTrick = new TrickState(2, "alice", [])
+        def hands = [
+            "alice": [QC, _2C],
+            "bob":   [AC, c(Suit.CLUBS, Rank.SIX)],
+            "carol": [],
+            "dave":  []
+        ]
+        def round = new RoundState(1, Pass.KEEPER, "alice", hands, [:], true,
+                                   [voidTrick, currentTrick], hands)
+        def state = HeartsStateBuilder.state(rounds: [round])
+
+        when:
+        strategy.yourTurnToPlay(game, state, alice, [QC, _2C] as Set)
+
+        then: "leads 2♣ (definite loser) rather than Q♣ — void opponent could dump a dangerous card on Q♣"
+        1 * game.playCard(alice, _2C)
     }
 
     // ── selectSpadesToPass: low-card protection threshold ────────────────────────
