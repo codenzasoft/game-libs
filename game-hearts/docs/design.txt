@@ -11,7 +11,17 @@ During a round, once can use the following information as input to playing decis
 - Which cards one has that are definite trick winners (when lead or following trump).
 - Which cards one has that are definite trick losers (when lead, following trump, or sluffing).
 
-Idea:
+Ideas:
 - provide a mechanism to checkpoint a game in progress for analysis. This can be used
   when I notice a poor choice by a bot for understanding why the choice was made, and
   to improve the bot strategy.
+
+Further strategy improvements (TODO):
+- Passed Q♠ propagation: when alice passed Q♠ to an opponent, followSpades and
+  selectSaboteurLeadCard should know the queen is gone from alice's hand and not
+  play as though she still holds it.
+- Offensive pass revisit: after Q♠ is passed away, re-evaluate whether the hand
+  is still viable for shooting the moon and adjust the pass selection accordingly.
+- Prospective saboteur detection: identify early (before the opponent has committed
+  all points) when another player is likely attempting to shoot the moon, and switch
+  into SABOTEUR mode sooner.
