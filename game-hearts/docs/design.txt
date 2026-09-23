@@ -1,0 +1,17 @@
+There are 3 types of play to consider as part of a Hearts strategy:
+1. Defensive - take as few points as possible.
+2. Shoot the moon - take all points.
+3. Sabotage - take as few points as possible to sabotage another player's attempt to shoot the moon.
+
+During a round, once can use the following information as input to playing decisions:
+- Which cards one passed to an opponent (during each non-keeper round).
+- The turn order of the opponent one passed cards to (during each non-keeper round).
+- Which cards remain to be played by opponents. That is, the set of all cards dealt, minus the set
+  of all cards played, minus the set of cards in one's hand.
+- Which cards one has that are definite trick winners (when lead or following trump).
+- Which cards one has that are definite trick losers (when lead, following trump, or sluffing).
+
+Idea:
+- provide a mechanism to checkpoint a game in progress for analysis. This can be used
+  when I notice a poor choice by a bot for understanding why the choice was made, and
+  to improve the bot strategy.
