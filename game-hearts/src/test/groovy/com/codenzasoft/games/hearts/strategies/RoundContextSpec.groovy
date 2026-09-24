@@ -101,6 +101,48 @@ class RoundContextSpec extends Specification {
         RoundContext.shootingPlayer(state).orElse(null) == "alice"
     }
 
+    def "does not flag a player as shooter when another player has already scored"() {
+        given: "alice wins Q♠+A♥ (14 pts) but bob already won Q♥ (1 pt) — moon shot is impossible"
+        def bobWinsQH = completeTrick([
+            new PlayedCard("bob",   c(Suit.HEARTS, Rank.QUEEN)),
+            new PlayedCard("carol", c(Suit.CLUBS,  Rank.TWO)),
+            new PlayedCard("dave",  c(Suit.CLUBS,  Rank.THREE)),
+            new PlayedCard("alice", c(Suit.CLUBS,  Rank.FOUR)),
+        ])
+        def aliceWinsQS = aliceWinsQueenOfSpades()
+        def aliceWinsAH = completeTrick([
+            new PlayedCard("alice", c(Suit.HEARTS, Rank.ACE)),
+            new PlayedCard("carol", c(Suit.HEARTS, Rank.TWO)),
+            new PlayedCard("dave",  c(Suit.CLUBS,  Rank.FIVE)),
+            new PlayedCard("bob",   c(Suit.CLUBS,  Rank.SIX)),
+        ])
+        def state = HeartsStateBuilder.state(
+            rounds: [HeartsStateBuilder.inProgressRound(tricks: [bobWinsQH, aliceWinsQS, aliceWinsAH])]
+        )
+
+        expect: "alice is not flagged — bob's Q♥ makes a complete moon shot impossible"
+        !RoundContext.shootingPlayer(state).isPresent()
+    }
+
+    def "does not flag a hearts-first shooter when another player has already won hearts"() {
+        given: "alice wins 4 hearts but bob already won 1 heart — moon shot is impossible"
+        def bobWinsHeart = bobWinsHeart()
+        def aliceTricks = (1..4).collect { i ->
+            completeTrick([
+                new PlayedCard("alice", c(Suit.HEARTS, Rank.values()[Rank.ACE.ordinal() - (i - 1)])),
+                new PlayedCard("carol", c(Suit.CLUBS,  Rank.TWO)),
+                new PlayedCard("dave",  c(Suit.CLUBS,  Rank.THREE)),
+                new PlayedCard("bob",   c(Suit.CLUBS,  Rank.FOUR)),
+            ])
+        }
+        def state = HeartsStateBuilder.state(
+            rounds: [HeartsStateBuilder.inProgressRound(tricks: [bobWinsHeart] + aliceTricks)]
+        )
+
+        expect: "alice is not flagged — bob's heart makes a complete moon shot impossible"
+        !RoundContext.shootingPlayer(state).isPresent()
+    }
+
     def "returns empty when a player reaches threshold but the round is complete"() {
         given: "round is complete (empty hands), score doesn't matter"
         def trick = aliceWinsQueenOfSpades()

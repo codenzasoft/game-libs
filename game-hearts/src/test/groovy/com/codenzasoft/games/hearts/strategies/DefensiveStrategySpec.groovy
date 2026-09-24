@@ -326,6 +326,40 @@ class DefensiveStrategySpec extends Specification {
         passed.size() == 3
     }
 
+    // ── selectLeadCard: singleton void creation ──────────────────────────────────────
+
+    def "leads a singleton definite loser to create a void rather than lowest of the longest suit"() {
+        given: "alice has 4 clubs (A♣ Q♣ 7♣ 8♣) and a singleton 2♦; all opponents' diamonds outrank 2♦"
+        def strategy = new DefensiveStrategy()
+        def game = Mock(HeartsGame)
+        // Q♠ already played; alice has clubs (4 cards), diamonds (singleton), spades (singleton K♠)
+        // leading 2♦ creates a diamonds void for future sluffing; leading 7♣ (longest suit) does not
+        def aliceHand = [AC, QC, _7C, c(Suit.CLUBS, Rank.EIGHT),
+                         _2D, c(Suit.SPADES, Rank.KING), c(Suit.HEARTS, Rank.THREE)]
+        def queenTrick = new TrickState(1, "bob", [  // Q♠ already played — alice not involved
+            new PlayedCard("bob",   QS),
+            new PlayedCard("carol", _3S),
+            new PlayedCard("dave",  _2S),
+            new PlayedCard("alice", _5S),
+        ])
+        def currentTrick = new TrickState(2, "alice", [])
+        // Opponents hold diamonds that all outrank 2♦; no one holds clubs higher than A♣
+        def round = new RoundState(
+            1, Pass.KEEPER, "alice",
+            ["alice": aliceHand, "bob": [AD, JD, _7D, _6D], "carol": [_3D, _4D, _5D, c(Suit.DIAMONDS, Rank.NINE)], "dave": [c(Suit.SPADES, Rank.ACE)]],
+            [:], true,
+            [queenTrick, currentTrick],
+            ["alice": aliceHand, "bob": [AD, JD, _7D, _6D], "carol": [_3D, _4D, _5D, c(Suit.DIAMONDS, Rank.NINE)], "dave": [c(Suit.SPADES, Rank.ACE)]]
+        )
+        def state = HeartsStateBuilder.state(rounds: [round])
+
+        when:
+        strategy.yourTurnToPlay(game, state, alice, new LinkedHashSet<>(aliceHand))
+
+        then: "leads 2♦ (singleton definite loser) to void diamonds rather than 7♣ (longest suit)"
+        1 * game.playCard(alice, _2D)
+    }
+
     // ── full game integration ─────────────────────────────────────────────────────
 
     def "four DefensiveStrategy bots complete a full game without errors"() {

@@ -243,6 +243,29 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     final Set<Suit> legalSuits = StrategyHelper.getSuits(legalCards);
     legalSuits.remove(Suit.HEARTS);
     if (!legalSuits.isEmpty()) {
+      // Prefer leading a singleton definite loser to create a void for future sluffing.
+      // Skip suits where a void opponent could dump Q♠. Among multiple singletons, pick the one
+      // with the most remaining suit cards in play — more future leads = more sluff opportunities.
+      final Optional<Card> singletonLoser =
+          legalSuits.stream()
+              .filter(s -> StrategyHelper.filterSuit(legalCards, s).count() == 1)
+              .flatMap(s -> StrategyHelper.filterSuit(legalCards, s))
+              .filter(c -> DefiniteCardClassifier.isDefiniteLoserWhenLead(c, round, player))
+              .filter(
+                  c ->
+                      !(!StrategyHelper.hasQueenBeenPlayed(round)
+                          && isAnyOpponentVoidInSuit(round, c.getSuit(), player)
+                          && StrategyHelper.filterSuit(round.getRemainingCards(), Suit.SPADES)
+                              .filter(r -> !round.getHand(player).contains(r))
+                              .anyMatch(r -> r.equals(HeartsGame.QUEEN_OF_SPADES))))
+              .max(
+                  Comparator.comparingLong(
+                      c ->
+                          StrategyHelper.filterSuit(round.getRemainingCards(), c.getSuit())
+                              .filter(r -> !round.getHand(player).contains(r))
+                              .count()));
+      if (singletonLoser.isPresent()) return singletonLoser;
+
       final List<Card> remainingLegalSuitCards =
           StrategyHelper.filterSuit(round.getRemainingCards(), legalSuits).toList();
       // rank remaining suits by number of cards remaining
