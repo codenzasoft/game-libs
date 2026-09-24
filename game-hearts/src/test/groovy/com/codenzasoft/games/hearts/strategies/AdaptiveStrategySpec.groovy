@@ -627,6 +627,93 @@ class AdaptiveStrategySpec extends Specification {
         1 * game.playCard(alice, _)
     }
 
+    def "saboteur does not lead a suit where a void opponent holds Q♠"() {
+        // Snapshot: game e542e53d, sara-bot leads trick 6, round 2 RIGHT pass.
+        // Darin won 4 hearts in trick 4 → SABOTEUR mode for sara-bot.
+        // selectSaboteurLeadCard finds K♣ as the highest guaranteed-win card (A♣ already played),
+        // but tom-bot showed void in clubs in trick 1 (played K♦ on a 2♣ lead) and still holds Q♠.
+        // Correct behaviour: skip clubs entirely; fall back to defensive; lead J♥.
+        given:
+        def strategy = new AdaptiveStrategy()
+        def game = Mock(HeartsGame)
+
+        def trick1 = new TrickState(1, "sara-bot", [
+            new PlayedCard("sara-bot", c(Suit.CLUBS,    Rank.TWO)),
+            new PlayedCard("meg-bot",  c(Suit.CLUBS,    Rank.QUEEN)),
+            new PlayedCard("tom-bot",  c(Suit.DIAMONDS, Rank.KING)),  // tom void in clubs
+            new PlayedCard("darin",    c(Suit.CLUBS,    Rank.ACE)),
+        ])
+        def trick2 = new TrickState(2, "darin", [
+            new PlayedCard("darin",    c(Suit.SPADES,   Rank.TEN)),
+            new PlayedCard("sara-bot", c(Suit.SPADES,   Rank.EIGHT)),
+            new PlayedCard("meg-bot",  c(Suit.SPADES,   Rank.NINE)),
+            new PlayedCard("tom-bot",  c(Suit.SPADES,   Rank.FIVE)),
+        ])
+        def trick3 = new TrickState(3, "darin", [
+            new PlayedCard("darin",    c(Suit.DIAMONDS, Rank.FIVE)),
+            new PlayedCard("sara-bot", c(Suit.DIAMONDS, Rank.FOUR)),
+            new PlayedCard("meg-bot",  c(Suit.HEARTS,   Rank.ACE)),
+            new PlayedCard("tom-bot",  c(Suit.DIAMONDS, Rank.JACK)),
+        ])
+        def trick4 = new TrickState(4, "tom-bot", [
+            new PlayedCard("tom-bot",  c(Suit.HEARTS,   Rank.TWO)),
+            new PlayedCard("darin",    c(Suit.HEARTS,   Rank.SIX)),   // darin wins with 6♥ — 4 hearts total → shooter
+            new PlayedCard("sara-bot", c(Suit.HEARTS,   Rank.THREE)),
+            new PlayedCard("meg-bot",  c(Suit.HEARTS,   Rank.FOUR)),
+        ])
+        def trick5 = new TrickState(5, "darin", [
+            new PlayedCard("darin",    c(Suit.DIAMONDS, Rank.THREE)),
+            new PlayedCard("sara-bot", c(Suit.DIAMONDS, Rank.ACE)),   // sara wins
+            new PlayedCard("meg-bot",  c(Suit.HEARTS,   Rank.TEN)),
+            new PlayedCard("tom-bot",  c(Suit.DIAMONDS, Rank.TEN)),
+        ])
+        def currentTrick = new TrickState(6, "sara-bot", [])
+
+        def hands = [
+            "darin":    [c(Suit.HEARTS,   Rank.NINE),  c(Suit.HEARTS,   Rank.SEVEN),
+                         c(Suit.CLUBS,    Rank.THREE), c(Suit.CLUBS,    Rank.SEVEN),
+                         c(Suit.DIAMONDS, Rank.TWO),   c(Suit.HEARTS,   Rank.EIGHT),
+                         c(Suit.DIAMONDS, Rank.QUEEN), c(Suit.DIAMONDS, Rank.SIX)],
+            "meg-bot":  [c(Suit.CLUBS,    Rank.EIGHT), c(Suit.SPADES,   Rank.FOUR),
+                         c(Suit.CLUBS,    Rank.NINE),  c(Suit.CLUBS,    Rank.FOUR),
+                         c(Suit.CLUBS,    Rank.FIVE),  c(Suit.SPADES,   Rank.SIX),
+                         c(Suit.SPADES,   Rank.TWO),   c(Suit.CLUBS,    Rank.TEN)],
+            "tom-bot":  [c(Suit.HEARTS,   Rank.KING),  c(Suit.HEARTS,   Rank.FIVE),
+                         c(Suit.DIAMONDS, Rank.NINE),  c(Suit.DIAMONDS, Rank.SEVEN),
+                         c(Suit.DIAMONDS, Rank.EIGHT), c(Suit.SPADES,   Rank.JACK),
+                         c(Suit.HEARTS,   Rank.QUEEN), c(Suit.SPADES,   Rank.QUEEN)],  // holds Q♠
+            "sara-bot": [c(Suit.SPADES,   Rank.ACE),   KC,
+                         c(Suit.CLUBS,    Rank.SIX),   c(Suit.SPADES,   Rank.THREE),
+                         c(Suit.SPADES,   Rank.SEVEN), KS,
+                         c(Suit.CLUBS,    Rank.JACK),  JH],
+        ]
+        def passes = [
+            "meg-bot":  [c(Suit.DIAMONDS, Rank.ACE),   c(Suit.DIAMONDS, Rank.FOUR), JH],
+            "darin":    [c(Suit.SPADES,   Rank.QUEEN), c(Suit.DIAMONDS, Rank.KING), c(Suit.DIAMONDS, Rank.JACK)],
+            "tom-bot":  [c(Suit.CLUBS,    Rank.QUEEN), c(Suit.CLUBS,    Rank.TEN),  c(Suit.HEARTS,   Rank.ACE)],
+            "sara-bot": [c(Suit.DIAMONDS, Rank.QUEEN), c(Suit.DIAMONDS, Rank.SIX),  c(Suit.DIAMONDS, Rank.FIVE)],
+        ]
+        def round = new RoundState(2, Pass.RIGHT, "sara-bot",
+            hands, passes, true,
+            [trick1, trick2, trick3, trick4, trick5, currentTrick],
+            hands)
+        def state = new HeartsState(
+            ["darin", "meg-bot", "tom-bot", "sara-bot"],
+            [round], false, null)
+        def player = new Player(
+            UUID.fromString("4a562ce6-3892-4dd2-b6a7-4752ffc26250"), "sara-bot")
+
+        when:
+        strategy.yourTurnToPlay(game, state, player,
+            [JH, KC, c(Suit.SPADES, Rank.ACE), c(Suit.CLUBS, Rank.SIX),
+             c(Suit.SPADES, Rank.SEVEN), c(Suit.SPADES, Rank.THREE),
+             c(Suit.CLUBS, Rank.JACK), KS] as Set)
+
+        then: "saboteur skips clubs (tom-bot void since trick 1, holds Q♠); falls back to defensive; leads J♥"
+        0 * game.playCard(player, { Card card -> card.getSuit() == Suit.CLUBS })
+        1 * game.playCard(player, JH)
+    }
+
     // ── bail-out after failed moon shot ──────────────────────────────────────────
 
     def "failed moon-shooter leads highest heart to dump dangerous cards"() {

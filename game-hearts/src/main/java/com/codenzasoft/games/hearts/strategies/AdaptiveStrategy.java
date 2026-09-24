@@ -287,6 +287,14 @@ public class AdaptiveStrategy extends DefensiveStrategy {
         .filter(c -> c.getSuit() != Suit.HEARTS)
         .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
         .filter(c -> !(c.getSuit() == Suit.SPADES && c.outRanks(Rank.QUEEN) && !queenPlayed))
+        // Skip suits where an opponent is known void AND Q♠ is still live — they could dump Q♠
+        .filter(
+            c ->
+                !(!queenPlayed
+                    && isAnyOpponentVoidInSuit(round, c.getSuit(), player)
+                    && StrategyHelper.filterSuit(round.getRemainingCards(), Suit.SPADES)
+                        .filter(r -> !myHand.contains(r))
+                        .anyMatch(r -> r.equals(HeartsGame.QUEEN_OF_SPADES))))
         .filter(
             c ->
                 StrategyHelper.filterSuit(round.getRemainingCards(), c.getSuit())

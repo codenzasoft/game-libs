@@ -318,7 +318,7 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
    * Returns true if any opponent is known to be void in {@code suit}, determined by inspecting
    * completed tricks in which that suit was led and an opponent played off-suit.
    */
-  private boolean isAnyOpponentVoidInSuit(
+  protected boolean isAnyOpponentVoidInSuit(
       final RoundState round, final Suit suit, final Player player) {
     return round.tricks().stream()
         .filter(TrickState::isComplete)
