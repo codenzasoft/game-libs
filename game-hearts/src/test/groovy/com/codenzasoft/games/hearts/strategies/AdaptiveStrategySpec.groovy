@@ -28,6 +28,7 @@ class AdaptiveStrategySpec extends Specification {
     static final Card KS = c(Suit.SPADES, Rank.KING)
     static final Card AC = c(Suit.CLUBS, Rank.ACE)
     static final Card KC = c(Suit.CLUBS, Rank.KING)
+    static final Card QC = c(Suit.CLUBS, Rank.QUEEN)
     static final Card AD = c(Suit.DIAMONDS, Rank.ACE)
     static final Card _2C = c(Suit.CLUBS, Rank.TWO)
     static final Card _3C = c(Suit.CLUBS, Rank.THREE)
@@ -768,6 +769,97 @@ class AdaptiveStrategySpec extends Specification {
 
         then: "still plays a card via defensive fallback"
         1 * game.playCard(alice, _)
+    }
+
+    def "does not enter SABOTEUR mode when the apparent shooter cannot complete the moon shot"() {
+        // Snapshot: game 38099977, sara-bot leads trick 7, round 5 LEFT pass.
+        // Meg has 14 pts (Q♠+J♥) which crosses SHOOT_THREAT_THRESHOLD, but darin already won Q♥
+        // (1 pt) in trick 4 — a complete moon shot is impossible. Strategy should be DEFENSIVE,
+        // not SABOTEUR. In defensive mode, 2♦ (singleton definite loser) is preferred over 7♣
+        // as a void-creation lead; A♣ (the saboteur guaranteed-win lead) must not be played.
+        given:
+        def strategy = new AdaptiveStrategy()
+        def game = Mock(HeartsGame)
+
+        def trick1 = new TrickState(1, "sara-bot", [
+            new PlayedCard("sara-bot", c(Suit.CLUBS,    Rank.TWO)),
+            new PlayedCard("meg-bot",  c(Suit.CLUBS,    Rank.JACK)),
+            new PlayedCard("tom-bot",  c(Suit.CLUBS,    Rank.KING)),
+            new PlayedCard("darin",    c(Suit.CLUBS,    Rank.NINE)),
+        ])
+        def trick2 = new TrickState(2, "tom-bot", [
+            new PlayedCard("tom-bot",  c(Suit.SPADES,   Rank.TEN)),
+            new PlayedCard("darin",    c(Suit.SPADES,   Rank.SEVEN)),
+            new PlayedCard("sara-bot", c(Suit.SPADES,   Rank.NINE)),
+            new PlayedCard("meg-bot",  c(Suit.SPADES,   Rank.EIGHT)),
+        ])
+        def trick3 = new TrickState(3, "tom-bot", [
+            new PlayedCard("tom-bot",  c(Suit.SPADES,   Rank.FOUR)),
+            new PlayedCard("darin",    c(Suit.SPADES,   Rank.SIX)),
+            new PlayedCard("sara-bot", c(Suit.SPADES,   Rank.FIVE)),
+            new PlayedCard("meg-bot",  c(Suit.SPADES,   Rank.JACK)),
+        ])
+        def trick4 = new TrickState(4, "meg-bot", [
+            new PlayedCard("meg-bot",  c(Suit.DIAMONDS, Rank.FIVE)),
+            new PlayedCard("tom-bot",  c(Suit.HEARTS,   Rank.QUEEN)),  // tom void in diamonds
+            new PlayedCard("darin",    c(Suit.DIAMONDS, Rank.QUEEN)),  // darin wins — takes Q♥
+            new PlayedCard("sara-bot", c(Suit.DIAMONDS, Rank.EIGHT)),
+        ])
+        def trick5 = new TrickState(5, "darin", [
+            new PlayedCard("darin",    c(Suit.SPADES,   Rank.TWO)),
+            new PlayedCard("sara-bot", c(Suit.SPADES,   Rank.THREE)),
+            new PlayedCard("meg-bot",  c(Suit.SPADES,   Rank.QUEEN)),  // meg wins Q♠ (13 pts)
+            new PlayedCard("tom-bot",  c(Suit.HEARTS,   Rank.JACK)),   // tom void in spades
+        ])
+        def trick6 = new TrickState(6, "meg-bot", [
+            new PlayedCard("meg-bot",  c(Suit.DIAMONDS, Rank.SEVEN)),
+            new PlayedCard("tom-bot",  c(Suit.CLUBS,    Rank.THREE)),  // tom void in diamonds
+            new PlayedCard("darin",    c(Suit.DIAMONDS, Rank.SIX)),
+            new PlayedCard("sara-bot", c(Suit.DIAMONDS, Rank.KING)),   // sara wins
+        ])
+        def currentTrick = new TrickState(7, "sara-bot", [])
+
+        def hands = [
+            "darin":    [c(Suit.DIAMONDS, Rank.THREE), c(Suit.DIAMONDS, Rank.FOUR),
+                         c(Suit.HEARTS,   Rank.FIVE),  c(Suit.HEARTS,   Rank.TWO),
+                         c(Suit.HEARTS,   Rank.SEVEN), c(Suit.HEARTS,   Rank.ACE),
+                         c(Suit.HEARTS,   Rank.KING)],
+            "meg-bot":  [c(Suit.HEARTS,   Rank.SIX),  c(Suit.DIAMONDS, Rank.TEN),
+                         c(Suit.SPADES,   Rank.ACE),   c(Suit.HEARTS,   Rank.FOUR),
+                         c(Suit.DIAMONDS, Rank.NINE),  c(Suit.DIAMONDS, Rank.ACE),
+                         c(Suit.DIAMONDS, Rank.JACK)],
+            "tom-bot":  [c(Suit.CLUBS,    Rank.FIVE),  c(Suit.HEARTS,   Rank.NINE),
+                         c(Suit.CLUBS,    Rank.TEN),   c(Suit.CLUBS,    Rank.FOUR),
+                         c(Suit.HEARTS,   Rank.EIGHT), c(Suit.CLUBS,    Rank.SIX),
+                         c(Suit.HEARTS,   Rank.TEN)],
+            "sara-bot": [c(Suit.CLUBS,    Rank.EIGHT), c(Suit.CLUBS,    Rank.SEVEN),
+                         c(Suit.DIAMONDS, Rank.TWO),   c(Suit.SPADES,   Rank.KING),
+                         c(Suit.HEARTS,   Rank.THREE), AC, QC],
+        ]
+        def passes = [
+            "meg-bot":  [c(Suit.CLUBS,    Rank.SIX),   c(Suit.HEARTS,   Rank.QUEEN), c(Suit.HEARTS, Rank.TEN)],
+            "darin":    [c(Suit.DIAMONDS, Rank.KING),   AC,                            QC],
+            "tom-bot":  [c(Suit.DIAMONDS, Rank.QUEEN),  c(Suit.HEARTS,   Rank.ACE),   c(Suit.HEARTS, Rank.KING)],
+            "sara-bot": [c(Suit.DIAMONDS, Rank.ACE),    c(Suit.DIAMONDS, Rank.JACK),   c(Suit.CLUBS, Rank.JACK)],
+        ]
+        def round = new RoundState(5, Pass.LEFT, "darin",
+            hands, passes, true,
+            [trick1, trick2, trick3, trick4, trick5, trick6, currentTrick],
+            hands)
+        def state = new HeartsState(
+            ["darin", "meg-bot", "tom-bot", "sara-bot"],
+            [round], false, null)
+        def player = new Player(
+            UUID.fromString("4a562ce6-3892-4dd2-b6a7-4752ffc26250"), "sara-bot")
+
+        when:
+        strategy.yourTurnToPlay(game, state, player,
+            [c(Suit.CLUBS, Rank.EIGHT), AC, c(Suit.CLUBS, Rank.SEVEN), QC,
+             c(Suit.SPADES, Rank.KING), c(Suit.DIAMONDS, Rank.TWO), c(Suit.HEARTS, Rank.THREE)] as Set)
+
+        then: "stays DEFENSIVE (darin's Q♥ makes meg's moon shot impossible); leads 2♦ to void diamonds"
+        0 * game.playCard(player, AC)
+        1 * game.playCard(player, c(Suit.DIAMONDS, Rank.TWO))
     }
 
     // ── full game completion ──────────────────────────────────────────────────────

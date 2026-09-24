@@ -33,6 +33,13 @@ public final class RoundContext {
 
   private RoundContext() {}
 
+  private static boolean noOneElseHasScored(
+      final Map<String, Integer> scores, final String candidate) {
+    return scores.entrySet().stream()
+        .filter(e -> !e.getKey().equals(candidate))
+        .allMatch(e -> e.getValue() == 0);
+  }
+
   /**
    * Returns the player who appears to be shooting the moon, based on accumulated round points.
    * Returns empty if no player meets the applicable threshold or the round is already complete.
@@ -48,6 +55,7 @@ public final class RoundContext {
       // Q♠ is already in someone's score; only a Q♠ + heart combination is a real threat
       return scores.entrySet().stream()
           .filter(e -> e.getValue() >= SHOOT_THREAT_THRESHOLD)
+          .filter(e -> noOneElseHasScored(scores, e.getKey()))
           .max(Comparator.comparing(Map.Entry::getValue))
           .map(Map.Entry::getKey);
     }
@@ -55,6 +63,7 @@ public final class RoundContext {
     // Q♠ still in play — all points so far are hearts. Catch hearts-first accumulation early.
     return scores.entrySet().stream()
         .filter(e -> e.getValue() >= HEARTS_ONLY_THRESHOLD)
+        .filter(e -> noOneElseHasScored(scores, e.getKey()))
         .max(Comparator.comparing(Map.Entry::getValue))
         .map(Map.Entry::getKey);
   }
