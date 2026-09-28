@@ -331,7 +331,14 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
               .filter(c -> DefiniteCardClassifier.isDefiniteLoserWhenLead(c, round, player))
               .max(Comparator.comparing(Card::getRank));
       if (highestLoser.isPresent()) return highestLoser;
-      return StrategyHelper.getMinRank(round.getHand(player), suit);
+      // Only fall back to the lowest card if an opponent can actually beat it — a guaranteed
+      // winner has no safe suit to lead into and should be skipped in favour of another suit.
+      return StrategyHelper.getMinRank(round.getHand(player), suit)
+          .filter(
+              m ->
+                  StrategyHelper.filterSuit(round.getRemainingCards(), suit)
+                      .filter(r -> !round.getHand(player).contains(r))
+                      .anyMatch(r -> r.outRanks(m)));
     } else {
       return Optional.empty();
     }
