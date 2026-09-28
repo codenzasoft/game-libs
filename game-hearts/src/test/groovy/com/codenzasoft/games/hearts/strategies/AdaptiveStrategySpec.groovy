@@ -862,6 +862,81 @@ class AdaptiveStrategySpec extends Specification {
         1 * game.playCard(player, c(Suit.DIAMONDS, Rank.TWO))
     }
 
+    // ── defensive lead fallback ───────────────────────────────────────────────────
+
+    def "does not fall back to leading singleton K♣ when it would win the trick"() {
+        given:
+        def strategy = new AdaptiveStrategy()
+        def game = Mock(HeartsGame)
+
+        // Round 7 ACROSS. After 5 tricks: tom=14pts (K♦ trick took K♥+Q♠), meg=1pt (Q♥ dumped by tom).
+        // tom is DEFENSIVE (noOneElseHasScored("tom") is false — meg has 1 pt).
+        // tom's hand: K♣ (singleton, highest remaining club) + 4 diamonds + 3 hearts.
+        // CLUBS has 9 remaining cards → ranked first by selectLeadCard, but K♣ would WIN.
+        // Expected: skip K♣ and lead 4♦ (definite loser — meg holds 5♦, 9♦, 10♦).
+        def trick1 = new TrickState(1, "darin", [
+            new PlayedCard("darin",    c(Suit.CLUBS,    Rank.TWO)),
+            new PlayedCard("sara-bot", c(Suit.CLUBS,    Rank.QUEEN)),
+            new PlayedCard("meg-bot",  c(Suit.SPADES,   Rank.KING)),
+            new PlayedCard("tom-bot",  c(Suit.CLUBS,    Rank.ACE)),
+        ])
+        def trick2 = new TrickState(2, "tom-bot", [
+            new PlayedCard("tom-bot",  c(Suit.DIAMONDS, Rank.KING)),
+            new PlayedCard("darin",    c(Suit.HEARTS,   Rank.KING)),
+            new PlayedCard("sara-bot", c(Suit.SPADES,   Rank.QUEEN)),
+            new PlayedCard("meg-bot",  c(Suit.DIAMONDS, Rank.QUEEN)),
+        ])
+        def trick3 = new TrickState(3, "tom-bot", [
+            new PlayedCard("tom-bot",  c(Suit.DIAMONDS, Rank.TWO)),
+            new PlayedCard("darin",    c(Suit.CLUBS,    Rank.JACK)),
+            new PlayedCard("sara-bot", c(Suit.SPADES,   Rank.THREE)),
+            new PlayedCard("meg-bot",  c(Suit.DIAMONDS, Rank.ACE)),
+        ])
+        def trick4 = new TrickState(4, "meg-bot", [
+            new PlayedCard("meg-bot",  c(Suit.SPADES,   Rank.JACK)),
+            new PlayedCard("tom-bot",  c(Suit.HEARTS,   Rank.QUEEN)),
+            new PlayedCard("darin",    c(Suit.SPADES,   Rank.TEN)),
+            new PlayedCard("sara-bot", c(Suit.SPADES,   Rank.NINE)),
+        ])
+        def trick5 = new TrickState(5, "meg-bot", [
+            new PlayedCard("meg-bot",  c(Suit.DIAMONDS, Rank.THREE)),
+            new PlayedCard("tom-bot",  c(Suit.DIAMONDS, Rank.JACK)),
+            new PlayedCard("darin",    c(Suit.SPADES,   Rank.EIGHT)),
+            new PlayedCard("sara-bot", c(Suit.SPADES,   Rank.ACE)),
+        ])
+        def currentTrick = new TrickState(6, "tom-bot", [])
+
+        def hands = [
+            "darin"   : [c(Suit.SPADES, Rank.FOUR), c(Suit.CLUBS, Rank.NINE), c(Suit.CLUBS, Rank.THREE), c(Suit.CLUBS, Rank.EIGHT), c(Suit.SPADES, Rank.FIVE), c(Suit.CLUBS, Rank.FIVE), c(Suit.CLUBS, Rank.SEVEN), c(Suit.CLUBS, Rank.SIX)],
+            "meg-bot" : [c(Suit.HEARTS, Rank.EIGHT), c(Suit.SPADES, Rank.TWO), c(Suit.HEARTS, Rank.FIVE), c(Suit.SPADES, Rank.SIX), c(Suit.DIAMONDS, Rank.FIVE), c(Suit.DIAMONDS, Rank.TEN), c(Suit.DIAMONDS, Rank.NINE), c(Suit.HEARTS, Rank.JACK)],
+            "tom-bot" : [c(Suit.DIAMONDS, Rank.SIX), c(Suit.DIAMONDS, Rank.FOUR), c(Suit.DIAMONDS, Rank.SEVEN), c(Suit.HEARTS, Rank.SEVEN), c(Suit.HEARTS, Rank.SIX), c(Suit.HEARTS, Rank.TWO), c(Suit.DIAMONDS, Rank.EIGHT), c(Suit.CLUBS, Rank.KING)],
+            "sara-bot": [c(Suit.HEARTS, Rank.FOUR), c(Suit.HEARTS, Rank.NINE), c(Suit.SPADES, Rank.SEVEN), c(Suit.CLUBS, Rank.FOUR), c(Suit.HEARTS, Rank.THREE), c(Suit.CLUBS, Rank.TEN), c(Suit.HEARTS, Rank.TEN), c(Suit.HEARTS, Rank.ACE)],
+        ]
+        def passes = [
+            "meg-bot" : [c(Suit.CLUBS, Rank.JACK), c(Suit.CLUBS, Rank.SIX), c(Suit.HEARTS, Rank.KING)],
+            "darin"   : [c(Suit.DIAMONDS, Rank.ACE), c(Suit.DIAMONDS, Rank.NINE), c(Suit.HEARTS, Rank.JACK)],
+            "tom-bot" : [c(Suit.SPADES, Rank.QUEEN), c(Suit.CLUBS, Rank.QUEEN), c(Suit.HEARTS, Rank.ACE)],
+            "sara-bot": [c(Suit.DIAMONDS, Rank.EIGHT), c(Suit.CLUBS, Rank.ACE), c(Suit.CLUBS, Rank.KING)],
+        ]
+        def round = new RoundState(7, Pass.ACROSS, "meg-bot",
+            hands, passes, true,
+            [trick1, trick2, trick3, trick4, trick5, currentTrick],
+            hands)
+        def state = new HeartsState(
+            ["darin", "meg-bot", "tom-bot", "sara-bot"],
+            [round], false, null)
+        def player = new Player(UUID.fromString("5c414673-92bc-48c1-8913-d9c2896fe12c"), "tom-bot")
+
+        when:
+        strategy.yourTurnToPlay(game, state, player,
+            [c(Suit.DIAMONDS, Rank.FOUR), c(Suit.HEARTS, Rank.TWO), c(Suit.CLUBS, Rank.KING), c(Suit.DIAMONDS, Rank.SEVEN),
+             c(Suit.DIAMONDS, Rank.SIX), c(Suit.HEARTS, Rank.SEVEN), c(Suit.HEARTS, Rank.SIX), c(Suit.DIAMONDS, Rank.EIGHT)] as Set)
+
+        then: "skips K♣ (guaranteed winner, clubs ranked first by remaining count) and leads 4♦"
+        0 * game.playCard(player, c(Suit.CLUBS, Rank.KING))
+        1 * game.playCard(player, c(Suit.DIAMONDS, Rank.FOUR))
+    }
+
     // ── full game completion ──────────────────────────────────────────────────────
 
     def "four bots using AdaptiveStrategy complete a full game without errors"() {
