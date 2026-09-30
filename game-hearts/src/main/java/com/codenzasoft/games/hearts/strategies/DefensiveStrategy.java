@@ -7,8 +7,12 @@ import com.codenzasoft.games.common.cards.Suit;
 import com.codenzasoft.games.hearts.*;
 import java.util.*;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DefensiveStrategy implements HeartsPlayerObserver {
+
+  private static final Logger log = LoggerFactory.getLogger(DefensiveStrategy.class);
 
   @Override
   public void yourTurnToPlay(
@@ -16,8 +20,17 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
       final HeartsState state,
       final Player player,
       final Set<Card> validCards) {
-    final Optional<Card> maybeCard = selectNextCard(state, player, validCards);
-    maybeCard.ifPresent(card -> game.playCard(player, card));
+    selectNextCard(state, player, validCards)
+        .ifPresent(
+            choice -> {
+              log.info(
+                  "[{}] {} plays {} — {}",
+                  game.getId(),
+                  player.name(),
+                  choice.card(),
+                  choice.reason());
+              game.playCard(player, choice.card());
+            });
   }
 
   @Override
@@ -26,115 +39,195 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     game.setPass(player, selectCardsToPass(state.getRound(), player, state.getRound().pass()));
   }
 
-  private Optional<Card> selectNextCard(
+  private Optional<CardChoice> selectNextCard(
       final HeartsState state, final Player player, final Set<Card> validCards) {
     if (validCards.isEmpty()) {
       return Optional.empty();
     }
     if (validCards.size() == 1) {
-      // no choice
-      return validCards.stream().findFirst();
+      return validCards.stream().findFirst().map(c -> CardChoice.of(c, "only legal card"));
     }
 
     final RoundState round = state.getRound();
     final Optional<Suit> maybeTrump = round.getTrick().getTrump();
     if (maybeTrump.isEmpty()) {
-      // there is no trump yet - I am leading
       return selectLeadCard(round, player, validCards);
     } else {
-      // non-lead play
       final Suit trump = maybeTrump.get();
       if (StrategyHelper.filterSuit(validCards, trump).findAny().isPresent()) {
-        // follow trump
         if (trump == Suit.SPADES) {
-          return followSpades(state, round, player, validCards, trump);
+          return Optional.of(followSpades(state, round, player, validCards, trump));
         } else {
-          return followTrump(round, player, validCards, trump);
+          return Optional.of(followTrump(state, round, player, validCards, trump));
         }
       } else {
-        // sluff a card
-        return selectNextSluffCard(round, player, validCards);
+        return Optional.of(selectNextSluffCard(round, player, validCards));
       }
     }
   }
 
-  private Optional<Card> followTrump(
-      final RoundState round, final Player player, final Set<Card> legalCards, final Suit trump) {
-    if (round.getTrick().number() == 1) {
-      // first trick of the round — few discards possible, safe to play high
-      return StrategyHelper.getMaxRank(legalCards, trump);
-    }
+  // ── Following a non-spades suit ─────────────────────────────────────────────
 
+  /**
+   * Selects a card to play when following a non-spades trump suit, using the definite
+   * winner/loser/unknown framework.
+   *
+   * <p>DEFENSIVE priority: highest definite loser → lowest unknown → lowest definite winner
+   * (forced).
+   *
+   * <p>Special cases preserved as early exits:
+   *
+   * <ul>
+   *   <li>Trick 1 — no hearts or Q♠ can appear; safe to play high and take the lead.
+   *   <li>Last card in trick with no points — take the lead harmlessly.
+   * </ul>
+   *
+   * <p>Optimisations applied before classification:
+   *
+   * <ul>
+   *   <li><b>Passes</b> — cards passed to an opponent who has already played are excluded from the
+   *       threatening set when computing definite winners.
+   *   <li><b>All-void</b> — when every remaining unplayed player is known void in trump, all
+   *       above-current-max cards become definite winners (no one can follow suit).
+   * </ul>
+   */
+  private CardChoice followTrump(
+      final HeartsState state,
+      final RoundState round,
+      final Player player,
+      final Set<Card> legalCards,
+      final Suit trump) {
     final TrickState trick = round.getTrick();
-    // if it's te last card in the trick and there are no points, take it with a high card
-    if (trick.cards().size() == 3 && StrategyHelper.getPoints(trick) == 0) {
-      // no points in the trick, so take it with the highest card
-      return StrategyHelper.getMaxRank(legalCards, trump);
+
+    // Trick 1: no hearts/Q♠ can appear — safe to play high and take the lead
+    if (trick.number() == 1) {
+      return StrategyHelper.getMaxRank(legalCards, trump)
+          .map(c -> CardChoice.of(c, "trick 1: no points possible, take lead"))
+          .orElseThrow();
     }
 
-    // attempt to play a lower card
-    final Optional<Card> lower =
-        StrategyHelper.getMaxLessThan(legalCards, StrategyHelper.getMaxTrump(trick).get());
-    // play the lower card or else play the highest trump
-    return lower.or(() -> StrategyHelper.getMaxRank(legalCards, trump));
+    // Last card in trick with no points — take the lead harmlessly
+    if (trick.cards().size() == 3 && StrategyHelper.getPoints(trick) == 0) {
+      return StrategyHelper.getMaxRank(legalCards, trump)
+          .map(c -> CardChoice.of(c, "last to play, no points: take lead"))
+          .orElseThrow();
+    }
+
+    // Passes optimisation: exclude passed cards whose recipient has already played
+    final Set<Card> nonThreats = computeNonThreats(state, round, player, trick);
+
+    // Void optimisation: if all remaining unplayed players are void in trump, no one can follow
+    // suit — cards above the current max become guaranteed winners without checking remaining hands
+    if (allUnplayedPlayersVoidInSuit(state, round, player, trick, trump)) {
+      final List<Card> losers = DefiniteCardClassifier.losersWhenFollowing(legalCards, trick);
+      final List<Card> forced = legalCards.stream().filter(c -> !losers.contains(c)).toList();
+      return losers.stream()
+          .max(Comparator.comparing(Card::getRank))
+          .map(c -> CardChoice.of(c, "all remaining void in " + trump + ": highest loser"))
+          .or(
+              () ->
+                  forced.stream()
+                      .min(Comparator.comparing(Card::getRank))
+                      .map(
+                          c ->
+                              CardChoice.of(
+                                  c, "all remaining void in " + trump + ": lowest winner")))
+          .orElseThrow();
+    }
+
+    // Classify using winner/loser/unknown framework
+    final List<Card> losers = DefiniteCardClassifier.losersWhenFollowing(legalCards, trick);
+    final List<Card> winners =
+        DefiniteCardClassifier.winnersWhenFollowing(legalCards, trick, round, player, nonThreats);
+    final List<Card> unknowns =
+        legalCards.stream().filter(c -> !losers.contains(c) && !winners.contains(c)).toList();
+
+    // DEFENSIVE: highest definite loser → lowest unknown → lowest definite winner (forced)
+    return losers.stream()
+        .max(Comparator.comparing(Card::getRank))
+        .map(c -> CardChoice.of(c, "definite loser: highest to dump safely"))
+        .or(
+            () ->
+                unknowns.stream()
+                    .min(Comparator.comparing(Card::getRank))
+                    .map(c -> CardChoice.of(c, "unknown outcome: lowest to minimize risk")))
+        .or(
+            () ->
+                winners.stream()
+                    .min(Comparator.comparing(Card::getRank))
+                    .map(c -> CardChoice.of(c, "forced winner: lowest to minimize impact")))
+        .orElseThrow();
   }
 
-  private Optional<Card> followSpades(
+  // ── Following spades ─────────────────────────────────────────────────────────
+
+  private CardChoice followSpades(
       final HeartsState hearts,
       final RoundState round,
       final Player player,
       final Set<Card> legalCards,
       final Suit trump) {
     if (StrategyHelper.hasQueenBeenPlayed(round)) {
-      // just like any other suit if the queen has already been played
-      return followTrump(round, player, legalCards, trump);
+      return followTrump(hearts, round, player, legalCards, trump);
     }
 
     final TrickState trick = round.getTrick();
     if (StrategyHelper.hasQueenBeenPlayed(trick)) {
-      // avoid taking the queen by playing the highest spade that won't take the queen
+      // Avoid taking the queen — play highest spade below Q♠, or any remaining spade
       final Optional<Card> belowQueen =
           StrategyHelper.getMaxLessThan(legalCards, HeartsGame.QUEEN_OF_SPADES);
-      // or must play a remaining spade
-      return belowQueen.or(() -> Optional.of(legalCards.iterator().next()));
+      return belowQueen
+          .map(c -> CardChoice.of(c, "Q♠ in trick: highest spade below queen to avoid taking it"))
+          .orElseGet(
+              () ->
+                  CardChoice.of(
+                      legalCards.iterator().next(), "Q♠ in trick: forced, only spade available"));
     }
+
     if (legalCards.contains(HeartsGame.QUEEN_OF_SPADES)) {
-      // I have the queen. If a higher spade has been played, dump the queen.
+      // Dump Q♠ if a higher spade has been played (someone else must take the trick)
       if (StrategyHelper.getMaxTrump(trick).map(c -> c.outRanks(Rank.QUEEN)).orElse(false)) {
-        return Optional.of(HeartsGame.QUEEN_OF_SPADES);
+        return CardChoice.of(HeartsGame.QUEEN_OF_SPADES, "dumping Q♠: higher spade already played");
       }
-      // If the only remaining spades are king and ace, and I don't have them all, play the queen
-      // (and this is not the last card)
+      // Play Q♠ if only K♠/A♠ remain and we don't hold them all
       if (isSafeToPlayQueenOfSpades(round, player)) {
-        return Optional.of(HeartsGame.QUEEN_OF_SPADES);
+        return CardChoice.of(HeartsGame.QUEEN_OF_SPADES, "safe to play Q♠: only K♠/A♠ remain");
       }
-      // Otherwise, play a spade that is not the queen (if I can).
-      final Optional<Card> nonQueen =
-          legalCards.stream()
-              .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
-              .min(Comparator.comparing(Card::getRank));
-      return nonQueen.or(() -> Optional.of(HeartsGame.QUEEN_OF_SPADES));
+      // Otherwise play a lower spade
+      return legalCards.stream()
+          .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
+          .min(Comparator.comparing(Card::getRank))
+          .map(c -> CardChoice.of(c, "holding Q♠: play lower spade first"))
+          .orElseGet(() -> CardChoice.of(HeartsGame.QUEEN_OF_SPADES, "holding Q♠: forced"));
     }
 
     if (trick.cards().size() == 3
         || isQueenPassedToOpponentPlayingBefore(hearts, round, player, trick)) {
-      // When points are already in the trick, try to duck under the current winner
+      // When points are in the trick, duck under the current winner
       if (StrategyHelper.getPoints(trick) > 0) {
         final Optional<Card> duck =
             StrategyHelper.getMaxTrump(trick)
                 .flatMap(max -> StrategyHelper.getMaxLessThan(legalCards, max));
-        if (duck.isPresent()) return duck;
+        if (duck.isPresent()) {
+          return CardChoice.of(duck.get(), "points in trick: ducking under winner");
+        }
       }
-      return StrategyHelper.getMaxRank(legalCards, trump);
+      return StrategyHelper.getMaxRank(legalCards, trump)
+          .map(c -> CardChoice.of(c, "last/Q♠-early player: play highest"))
+          .orElseThrow();
     }
 
-    // Duck under the current trick winner rather than comparing against Q♠ as a fixed threshold
+    // Duck under the current trick winner
     final Optional<Card> duck =
         StrategyHelper.getMaxTrump(trick)
             .flatMap(max -> StrategyHelper.getMaxLessThan(legalCards, max));
-    if (duck.isPresent()) return duck;
-    // Can't duck — play lowest to leave room for remaining players to beat us
-    return StrategyHelper.getMinRank(legalCards, trump);
+    if (duck.isPresent()) {
+      return CardChoice.of(duck.get(), "ducking under trick winner");
+    }
+    // Can't duck — play lowest to leave room for remaining players
+    return StrategyHelper.getMinRank(legalCards, trump)
+        .map(c -> CardChoice.of(c, "can't duck: lowest spade to leave room"))
+        .orElseThrow();
   }
 
   private boolean isQueenPassedToOpponentPlayingBefore(
@@ -143,6 +236,7 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
       final Player player,
       final TrickState trick) {
     if (round.pass() != Pass.KEEPER
+        && round.getPass(player.name()) != null
         && round.getPass(player.name()).contains(HeartsGame.QUEEN_OF_SPADES)) {
       final String passedToPlayer = hearts.getPlayerRelativeTo(player.name(), round.pass());
       return trick.cards().stream().map(PlayedCard::player).toList().contains(passedToPlayer);
@@ -150,14 +244,6 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     return false;
   }
 
-  /**
-   * Returns whether it's safe to play the queen of spades. It's safe when another player will have
-   * to play the king or ace.
-   *
-   * @param round A {@link RoundState}
-   * @param player The {@link Player} for which safety is being determined
-   * @return Whether it's safe to play the queen of spades
-   */
   private boolean isSafeToPlayQueenOfSpades(final RoundState round, final Player player) {
     if ((round.getTrick().cards().size() < 3)
         && round.getHand(player).contains(HeartsGame.QUEEN_OF_SPADES)) {
@@ -171,49 +257,49 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     return false;
   }
 
-  private Optional<Card> selectNextSluffCard(
+  // ── Sluffing ─────────────────────────────────────────────────────────────────
+
+  private CardChoice selectNextSluffCard(
       final RoundState round, final Player player, final Set<Card> legalCards) {
-    // sluff the queen, king, or ace of spades (in that order)
+    // Sluff Q♠, K♠, or A♠ first (in that order of preference) to shed the most dangerous cards
     final Optional<Card> highSpade =
         legalCards.stream()
             .filter(c -> c.getSuit().equals(Suit.SPADES))
             .filter(c -> c.outRanks(Rank.JACK))
             .min(Comparator.comparing(Card::getRank));
     if (highSpade.isPresent()) {
-      return highSpade;
+      return CardChoice.of(highSpade.get(), "sluffing dangerous spade (Q/K/A)");
     }
-    // sluff a high heart or a high card
+    // Sluff the highest heart to reduce point exposure
     final Optional<Card> highHeart = StrategyHelper.getMaxRank(legalCards, Suit.HEARTS);
-    return highHeart.or(() -> legalCards.stream().max(Comparator.comparing(Card::getRank)));
+    if (highHeart.isPresent()) {
+      return CardChoice.of(highHeart.get(), "sluffing highest heart");
+    }
+    return legalCards.stream()
+        .max(Comparator.comparing(Card::getRank))
+        .map(c -> CardChoice.of(c, "sluffing highest card"))
+        .orElseThrow();
   }
 
-  protected Optional<Card> selectLeadCard(
+  // ── Leading ──────────────────────────────────────────────────────────────────
+
+  protected Optional<CardChoice> selectLeadCard(
       final RoundState round, final Player player, final Set<Card> legalCards) {
-    // no choice - handles leading a round with 2 of clubs
     if (legalCards.size() == 1) {
-      return Optional.of(legalCards.iterator().next());
+      return legalCards.stream().findFirst().map(c -> CardChoice.of(c, "only legal card to lead"));
     }
 
-    // Considerations if I have the queen of spades:
-    // * lead the queen if only other remaining spades are higher
-    // * lead a short suit to create a void to dump the queen
-    // * lead a spade if I have enough to protection, to draw out remaining spades, such
-    //   that I cannot be led into.
-    //
-    // Considerations if I do not have the queen of spades or higher:
-    // * lead a lower spade to force out the queen
-
-    // try to weed out the Queen
+    // Q♠ smoke-out: if there are still spades to play, lead them to flush out the queen
     if (!StrategyHelper.hasQueenBeenPlayed(round)) {
       if (StrategyHelper.filterSuit(legalCards, Suit.SPADES).findAny().isPresent()) {
-        // lead a spade, if I don't have the Q, K, A
         final List<Card> trouble =
             StrategyHelper.getHigherCards(legalCards, Suit.SPADES, Rank.JACK);
         if (trouble.isEmpty()) {
-          return StrategyHelper.getMaxRank(legalCards, Suit.SPADES);
+          // Lead highest spade — no Q/K/A in hand, safe to smoke out
+          return StrategyHelper.getMaxRank(legalCards, Suit.SPADES)
+              .map(c -> CardChoice.of(c, "spade smoke-out: lead highest to flush Q♠"));
         } else {
-          // don't lead spades when I have the Q, K, or A - instead lead the suite I have the least
-          // of (to generate a void)
+          // Hold dangerous spades — void a non-spade suit first to create a dump target
           final Optional<Suit> leastSuit =
               legalCards.stream()
                   .filter(c -> !c.getSuit().equals(Suit.SPADES))
@@ -223,37 +309,42 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
                   .min(Comparator.comparing(Map.Entry::getValue))
                   .map(Map.Entry::getKey);
           if (leastSuit.isPresent()) {
-            return StrategyHelper.getMinRank(legalCards, leastSuit.get());
+            return StrategyHelper.getMinRank(legalCards, leastSuit.get())
+                .map(c -> CardChoice.of(c, "holding Q/K/A♠: lead shortest non-spade to void suit"));
           } else {
-            // I can only lead spades - lead the queen if ace or king will be played
+            // Only spades remain — play Q♠ if safe, otherwise lowest non-queen
             if (isSafeToPlayQueenOfSpades(round, player)) {
-              return Optional.of(HeartsGame.QUEEN_OF_SPADES);
+              return Optional.of(CardChoice.of(HeartsGame.QUEEN_OF_SPADES, "safe Q♠ lead"));
             }
-            // lead the lowest spade that is not the queen
-            final List<Card> allButQueen =
-                legalCards.stream()
-                    .filter(card -> !card.equals(HeartsGame.QUEEN_OF_SPADES))
-                    .toList();
-            return StrategyHelper.getMinRank(allButQueen, Suit.SPADES);
+            return legalCards.stream()
+                .filter(card -> !card.equals(HeartsGame.QUEEN_OF_SPADES))
+                .min(Comparator.comparing(Card::getRank))
+                .map(c -> CardChoice.of(c, "only spades: lowest non-Q♠ lead"))
+                .or(
+                    () ->
+                        StrategyHelper.getMinRank(legalCards, Suit.SPADES)
+                            .map(c -> CardChoice.of(c, "forced Q♠ lead")));
           }
         }
       }
     }
-    // lead a card from the longest suit (not hearts)
+
+    // Lead a card from a non-hearts suit using the definite-loser preference
     final Set<Suit> legalSuits = StrategyHelper.getSuits(legalCards);
     legalSuits.remove(Suit.HEARTS);
     if (!legalSuits.isEmpty()) {
-      // Prefer leading a singleton definite loser to create a void for future sluffing.
-      // Skip suits where a void opponent could dump Q♠. Among multiple singletons, pick the one
-      // with the most remaining suit cards in play — more future leads = more sluff opportunities.
-      final Optional<Card> singletonLoser =
+      // Prefer a singleton definite loser in a non-hearts suit to create a void for future
+      // sluffing.
+      // Skip suits where a void opponent could dump Q♠ onto the trick.
+      final boolean queenLive = !StrategyHelper.hasQueenBeenPlayed(round);
+      final Optional<CardChoice> singletonLoser =
           legalSuits.stream()
               .filter(s -> StrategyHelper.filterSuit(legalCards, s).count() == 1)
               .flatMap(s -> StrategyHelper.filterSuit(legalCards, s))
               .filter(c -> DefiniteCardClassifier.isDefiniteLoserWhenLead(c, round, player))
               .filter(
                   c ->
-                      !(!StrategyHelper.hasQueenBeenPlayed(round)
+                      !(queenLive
                           && isAnyOpponentVoidInSuit(round, c.getSuit(), player)
                           && StrategyHelper.filterSuit(round.getRemainingCards(), Suit.SPADES)
                               .filter(r -> !round.getHand(player).contains(r))
@@ -263,85 +354,87 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
                       c ->
                           StrategyHelper.filterSuit(round.getRemainingCards(), c.getSuit())
                               .filter(r -> !round.getHand(player).contains(r))
-                              .count()));
+                              .count()))
+              .map(c -> CardChoice.of(c, "singleton loser: void creation for future sluffing"));
       if (singletonLoser.isPresent()) return singletonLoser;
 
+      // Rank remaining suits by card count descending, then try each for a safe lead
       final List<Card> remainingLegalSuitCards =
           StrategyHelper.filterSuit(round.getRemainingCards(), legalSuits).toList();
-      // rank remaining suits by number of cards remaining
       List<Suit> rankedSuits =
           remainingLegalSuitCards.stream()
               .collect(Collectors.groupingBy(Card::getSuit, Collectors.counting()))
               .entrySet()
               .stream()
-              .sorted(Map.Entry.<Suit, Long>comparingByValue())
+              .sorted(Map.Entry.<Suit, Long>comparingByValue().reversed())
               .map(Map.Entry::getKey)
               .toList();
-      rankedSuits = new ArrayList<>(rankedSuits);
-      Collections.reverse(rankedSuits);
 
-      for (Suit suit : rankedSuits) {
-        Optional<Card> optionalCard = selectLeadCardOfSuit(round, player, suit, legalCards);
-        if (optionalCard.isPresent()) {
-          return optionalCard;
-        }
+      for (final Suit suit : rankedSuits) {
+        final Optional<CardChoice> choice = selectLeadCardOfSuit(round, player, suit, legalCards);
+        if (choice.isPresent()) return choice;
       }
     }
 
-    // TODO: this just returns a low card
     return legalCards.stream()
         .min(Comparator.comparing(Card::getRank))
-        .or(() -> Optional.of(legalCards.iterator().next()));
+        .map(c -> CardChoice.of(c, "fallback: lowest card"))
+        .or(
+            () ->
+                Optional.of(
+                    CardChoice.of(legalCards.iterator().next(), "fallback: first available")));
   }
 
   /**
-   * Select a card of the provided suit to lead.
+   * Selects a card of the provided suit to lead.
    *
    * <p>Priority order:
    *
    * <ol>
-   *   <li>When no opponent is known to be void in the suit (from trick history), lead the highest
-   *       card if an opponent can beat it — everyone must follow suit, so dumping a high card is
-   *       safe.
-   *   <li>Lead the highest definite loser ({@link DefiniteCardClassifier#isDefiniteLoserWhenLead})
-   *       — guaranteed not to win the trick, and leading the highest dumps the most dangerous card
-   *       safely.
-   *   <li>Fall back to the lowest card in the suit.
+   *   <li>When no opponent is known to be void in the suit, lead the highest card if an opponent
+   *       can beat it — everyone must follow suit, so dumping a high card is safe.
+   *   <li>Lead the highest definite loser — guaranteed not to win the trick.
+   *   <li>Fall back to the lowest card in the suit, but only if an opponent can actually beat it —
+   *       a guaranteed winner should be skipped so another suit is tried instead.
    * </ol>
    */
-  protected Optional<Card> selectLeadCardOfSuit(
+  protected Optional<CardChoice> selectLeadCardOfSuit(
       final RoundState round, final Player player, final Suit suit, final Set<Card> legalCards) {
-    long playedCount = StrategyHelper.filterSuit(round.getPlayedCards(), suit).count();
-    long inMyHandCount = StrategyHelper.filterSuit(round.getHand(player), suit).count();
-    long remainingCount = 13 - playedCount - inMyHandCount;
-    if (remainingCount > 0) {
-      if (!suit.equals(Suit.HEARTS) && !isAnyOpponentVoidInSuit(round, suit, player)) {
-        final Optional<Card> high = StrategyHelper.getMaxRank(round.getHand(player), suit);
-        if (high.isPresent()) {
-          final Card h = high.get();
-          final boolean opponentCanBeat =
-              StrategyHelper.filterSuit(round.getRemainingCards(), suit)
-                  .filter(r -> !round.getHand(player).contains(r))
-                  .anyMatch(r -> r.outRanks(h));
-          if (opponentCanBeat) return high;
+    final long playedCount = StrategyHelper.filterSuit(round.getPlayedCards(), suit).count();
+    final long inMyHandCount = StrategyHelper.filterSuit(round.getHand(player), suit).count();
+    final long remainingCount = 13 - playedCount - inMyHandCount;
+    if (remainingCount <= 0) return Optional.empty();
+
+    if (!suit.equals(Suit.HEARTS) && !isAnyOpponentVoidInSuit(round, suit, player)) {
+      final Optional<Card> high = StrategyHelper.getMaxRank(round.getHand(player), suit);
+      if (high.isPresent()) {
+        final Card h = high.get();
+        final boolean opponentCanBeat =
+            StrategyHelper.filterSuit(round.getRemainingCards(), suit)
+                .filter(r -> !round.getHand(player).contains(r))
+                .anyMatch(r -> r.outRanks(h));
+        if (opponentCanBeat) {
+          return Optional.of(CardChoice.of(h, "lead high: opponent can beat, dump safely"));
         }
       }
-      final Optional<Card> highestLoser =
-          StrategyHelper.filterSuit(legalCards, suit)
-              .filter(c -> DefiniteCardClassifier.isDefiniteLoserWhenLead(c, round, player))
-              .max(Comparator.comparing(Card::getRank));
-      if (highestLoser.isPresent()) return highestLoser;
-      // Only fall back to the lowest card if an opponent can actually beat it — a guaranteed
-      // winner has no safe suit to lead into and should be skipped in favour of another suit.
-      return StrategyHelper.getMinRank(round.getHand(player), suit)
-          .filter(
-              m ->
-                  StrategyHelper.filterSuit(round.getRemainingCards(), suit)
-                      .filter(r -> !round.getHand(player).contains(r))
-                      .anyMatch(r -> r.outRanks(m)));
-    } else {
-      return Optional.empty();
     }
+
+    final Optional<CardChoice> highestLoser =
+        StrategyHelper.filterSuit(legalCards, suit)
+            .filter(c -> DefiniteCardClassifier.isDefiniteLoserWhenLead(c, round, player))
+            .max(Comparator.comparing(Card::getRank))
+            .map(c -> CardChoice.of(c, "highest definite loser in " + suit));
+    if (highestLoser.isPresent()) return highestLoser;
+
+    // Only return the lowest card if an opponent can actually beat it — if no opponent holds a
+    // higher card, the card is a guaranteed winner and this suit should be skipped.
+    return StrategyHelper.getMinRank(round.getHand(player), suit)
+        .filter(
+            m ->
+                StrategyHelper.filterSuit(round.getRemainingCards(), suit)
+                    .filter(r -> !round.getHand(player).contains(r))
+                    .anyMatch(r -> r.outRanks(m)))
+        .map(c -> CardChoice.of(c, "lowest in " + suit + ": fallback"));
   }
 
   /**
@@ -359,6 +452,8 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
                     .filter(pc -> !pc.player().equals(player.name()))
                     .anyMatch(pc -> pc.card().getSuit() != suit));
   }
+
+  // ── Passing ──────────────────────────────────────────────────────────────────
 
   protected List<Card> selectCardsToPass(
       final RoundState round, final Player player, final Pass pass) {
@@ -397,7 +492,6 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     final Set<Card> excluded = new HashSet<>(alreadyPassing);
     final List<Card> result = new ArrayList<>();
 
-    // Prefer voiding the shortest suit first (clubs then diamonds, or vice versa)
     final List<Suit> candidates =
         List.of(Suit.CLUBS, Suit.DIAMONDS).stream()
             .sorted(
@@ -414,7 +508,6 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
               .filter(c -> !excluded.contains(c))
               .sorted(Comparator.comparing(Card::getRank).reversed())
               .toList();
-      // Only pass if all cards in the suit fit in the remaining budget — partial voids add no value
       if (!inSuit.isEmpty() && inSuit.size() <= needed - result.size()) {
         result.addAll(inSuit);
         excluded.addAll(inSuit);
@@ -430,12 +523,65 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     if (spades.size() < 4) {
       return StrategyHelper.getHigherCards(spades, Suit.SPADES, Rank.JACK);
     }
-    // With 4+ spades, only keep the suit when ≥ 2 low cards (≤ J) can absorb early leads;
-    // Q/K/A alone alongside a single low card leaves the queen exposed.
     final long lowSpades = spades.stream().filter(c -> !c.outRanks(Rank.JACK)).count();
     if (lowSpades < 2) {
       return StrategyHelper.getHigherCards(spades, Suit.SPADES, Rank.JACK);
     }
     return List.of();
+  }
+
+  // ── Optimisation helpers ─────────────────────────────────────────────────────
+
+  /**
+   * Returns the set of cards that are known not to be playable in the current trick. These are
+   * cards that were passed to an opponent who has already played in this trick — they cannot affect
+   * the outcome and should be excluded from the threatening-card set when computing definite
+   * winners.
+   */
+  protected Set<Card> computeNonThreats(
+      final HeartsState state,
+      final RoundState round,
+      final Player player,
+      final TrickState trick) {
+    if (round.pass() == Pass.KEEPER) return Set.of();
+    final List<Card> passed = round.getPass(player.name());
+    if (passed == null || passed.isEmpty()) return Set.of();
+    final String passedToPlayer = state.getPlayerRelativeTo(player.name(), round.pass());
+    final boolean passedToPlayerHasPlayed =
+        trick.cards().stream().anyMatch(pc -> pc.player().equals(passedToPlayer));
+    return passedToPlayerHasPlayed ? new HashSet<>(passed) : Set.of();
+  }
+
+  /**
+   * Returns true when every remaining unplayed player in the current trick is known void in {@code
+   * suit} from previous trick history. When true, no unplayed player can follow suit, so the only
+   * cards that can beat a candidate are those already played in the trick.
+   */
+  private boolean allUnplayedPlayersVoidInSuit(
+      final HeartsState state,
+      final RoundState round,
+      final Player player,
+      final TrickState trick,
+      final Suit suit) {
+    final Set<String> alreadyPlayed =
+        trick.cards().stream().map(PlayedCard::player).collect(Collectors.toSet());
+    final List<String> unplayed =
+        state.players().stream()
+            .filter(p -> !p.equals(player.name()) && !alreadyPlayed.contains(p))
+            .toList();
+    if (unplayed.isEmpty()) return false;
+    return unplayed.stream().allMatch(p -> isPlayerKnownVoidInSuit(round, p, suit));
+  }
+
+  private boolean isPlayerKnownVoidInSuit(
+      final RoundState round, final String playerName, final Suit suit) {
+    return round.tricks().stream()
+        .filter(TrickState::isComplete)
+        .filter(t -> t.getTrump().map(s -> s == suit).orElse(false))
+        .anyMatch(
+            t ->
+                t.cards().stream()
+                    .filter(pc -> pc.player().equals(playerName))
+                    .anyMatch(pc -> pc.card().getSuit() != suit));
   }
 }
