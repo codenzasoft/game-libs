@@ -10,6 +10,8 @@ import com.codenzasoft.games.hearts.RoundState;
 import com.codenzasoft.games.hearts.TrickState;
 import java.util.*;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A Hearts bot that selects a mode at the start of each round and adapts its play accordingly.
@@ -26,6 +28,8 @@ import java.util.stream.Collectors;
  * </ul>
  */
 public class AdaptiveStrategy extends DefensiveStrategy {
+
+  private static final Logger log = LoggerFactory.getLogger(AdaptiveStrategy.class);
 
   private int evaluatedPassRound = -1;
   private int evaluatedPlayRound = -1;
@@ -50,9 +54,9 @@ public class AdaptiveStrategy extends DefensiveStrategy {
       final Set<Card> validCards) {
     evaluateForPlay(state, player);
     if (committedToShoot && RoundContext.hasMoonShotFailed(state, player.name())) {
-      final Optional<Card> bail = selectBailOutCard(state.getRound(), validCards);
+      final Optional<CardChoice> bail = selectBailOutCard(state.getRound(), validCards);
       if (bail.isPresent()) {
-        game.playCard(player, bail.get());
+        logAndPlay(game, player, bail.get());
       } else {
         super.yourTurnToPlay(game, state, player, validCards);
       }
@@ -60,12 +64,13 @@ public class AdaptiveStrategy extends DefensiveStrategy {
     }
     final Mode mode = resolveMode(state, player);
     if (mode == Mode.OFFENSIVE) {
-      selectOffensiveCard(state, player, validCards).ifPresent(card -> game.playCard(player, card));
+      selectOffensiveCard(state, player, validCards)
+          .ifPresent(choice -> logAndPlay(game, player, choice));
     } else if (mode == Mode.SABOTEUR) {
       final String shooter = RoundContext.shootingPlayer(state).orElseThrow();
-      final Optional<Card> card = selectSaboteurCard(state, player, validCards, shooter);
-      if (card.isPresent()) {
-        game.playCard(player, card.get());
+      final Optional<CardChoice> choice = selectSaboteurCard(state, player, validCards, shooter);
+      if (choice.isPresent()) {
+        logAndPlay(game, player, choice.get());
       } else {
         super.yourTurnToPlay(game, state, player, validCards);
       }
@@ -100,13 +105,16 @@ public class AdaptiveStrategy extends DefensiveStrategy {
 
   // ── Offensive card selection ─────────────────────────────────────────────────
 
-  Optional<Card> selectOffensiveCard(
+  Optional<CardChoice> selectOffensiveCard(
       final HeartsState state, final Player player, final Set<Card> validCards) {
     if (validCards.isEmpty()) return Optional.empty();
-    if (validCards.size() == 1) return validCards.stream().findFirst();
+    if (validCards.size() == 1) {
+      return validCards.stream().findFirst().map(c -> CardChoice.of(c, "only legal card"));
+    }
 
     final RoundState round = state.getRound();
-    final Optional<Suit> maybeTrump = round.getTrick().getTrump();
+    final TrickState trick = round.getTrick();
+    final Optional<Suit> maybeTrump = trick.getTrump();
 
     if (maybeTrump.isEmpty()) {
       return selectOffensiveLeadCard(round, player, validCards);
@@ -114,40 +122,70 @@ public class AdaptiveStrategy extends DefensiveStrategy {
 
     final Suit trump = maybeTrump.get();
     if (StrategyHelper.filterSuit(validCards, trump).findAny().isPresent()) {
-      // Follow suit — always play highest to win the trick
-      return StrategyHelper.getMaxRank(validCards, trump);
+      // Follow suit — lowest guaranteed winner to preserve high cards; fall back to highest
+      final List<Card> trumpCards =
+          StrategyHelper.filterSuit(validCards, trump).collect(Collectors.toList());
+      final Set<Card> nonThreats = computeNonThreats(state, round, player, trick);
+      final List<Card> winners =
+          DefiniteCardClassifier.winnersWhenFollowing(trumpCards, trick, round, player, nonThreats);
+      if (!winners.isEmpty()) {
+        return winners.stream()
+            .min(Comparator.comparing(Card::getRank))
+            .map(c -> CardChoice.of(c, "offensive follow: lowest guaranteed winner"));
+      }
+      return StrategyHelper.getMaxRank(validCards, trump)
+          .map(
+              c ->
+                  CardChoice.of(
+                      c, "offensive follow: no guaranteed winner, highest to maximize win"));
     }
     return selectOffensiveSluff(validCards);
   }
 
-  private Optional<Card> selectOffensiveLeadCard(
+  private Optional<CardChoice> selectOffensiveLeadCard(
       final RoundState round, final Player player, final Set<Card> validCards) {
     // Lead highest heart to collect points aggressively
     final Optional<Card> highHeart = StrategyHelper.getMaxRank(validCards, Suit.HEARTS);
-    if (highHeart.isPresent()) return highHeart;
-
-    // No hearts available — lead a suit where I hold the highest remaining card (never Q♠)
-    for (final Card candidate :
-        validCards.stream()
-            .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
-            .sorted(Comparator.comparing(Card::getRank).reversed())
-            .toList()) {
-      final Suit suit = candidate.getSuit();
-      final boolean isHighest =
-          StrategyHelper.filterSuit(round.getRemainingCards(), suit)
-              .filter(c -> !round.getHand(player).contains(c))
-              .noneMatch(c -> c.outRanks(candidate));
-      if (isHighest) return Optional.of(candidate);
+    if (highHeart.isPresent()) {
+      return Optional.of(CardChoice.of(highHeart.get(), "offensive lead: highest heart"));
     }
 
-    // No guaranteed-win card exists — lead highest non-Q♠ card to avoid handing away 13 pts
-    return validCards.stream()
-        .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
+    // No hearts — lead using winner/unknown/loser framework (exclude Q♠ throughout)
+    final List<Card> candidates =
+        validCards.stream().filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES)).toList();
+    if (candidates.isEmpty()) {
+      // Only Q♠ left — lead it; it's the only option
+      return validCards.stream()
+          .findFirst()
+          .map(c -> CardChoice.of(c, "offensive lead: forced Q♠"));
+    }
+
+    // Lowest guaranteed winner (preserves higher cards for future leads)
+    final List<Card> winners = DefiniteCardClassifier.winnersWhenLead(candidates, round, player);
+    if (!winners.isEmpty()) {
+      return winners.stream()
+          .min(Comparator.comparing(Card::getRank))
+          .map(c -> CardChoice.of(c, "offensive lead: lowest guaranteed winner"));
+    }
+
+    // No guaranteed winner — lead highest unknown to maximize win chance
+    final List<Card> unknowns =
+        candidates.stream()
+            .filter(c -> !DefiniteCardClassifier.isDefiniteLoserWhenLead(c, round, player))
+            .toList();
+    if (!unknowns.isEmpty()) {
+      return unknowns.stream()
+          .max(Comparator.comparing(Card::getRank))
+          .map(c -> CardChoice.of(c, "offensive lead: highest unknown"));
+    }
+
+    // All are definite losers — lead highest to dump a dangerous card
+    return candidates.stream()
         .max(Comparator.comparing(Card::getRank))
-        .or(() -> validCards.stream().max(Comparator.comparing(Card::getRank)));
+        .map(c -> CardChoice.of(c, "offensive lead: no winning options, highest loser to dump"));
   }
 
-  private Optional<Card> selectOffensiveSluff(final Set<Card> validCards) {
+  private Optional<CardChoice> selectOffensiveSluff(final Set<Card> validCards) {
     // Discard a low safe card — preserve hearts, Q♠, and A♠/K♠ (spade protection) for the shot
     final Optional<Card> safeLow =
         validCards.stream()
@@ -155,16 +193,22 @@ public class AdaptiveStrategy extends DefensiveStrategy {
             .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
             .filter(c -> !(c.getSuit() == Suit.SPADES && c.outRanks(Rank.QUEEN)))
             .min(Comparator.comparing(Card::getRank));
-    if (safeLow.isPresent()) return safeLow;
-    // Fall back to A♠/K♠ only when no other non-point option exists
+    if (safeLow.isPresent()) {
+      return Optional.of(
+          CardChoice.of(safeLow.get(), "offensive sluff: lowest safe non-point card"));
+    }
     final Optional<Card> spadeProtector =
         validCards.stream()
             .filter(c -> c.getSuit() != Suit.HEARTS)
             .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
             .min(Comparator.comparing(Card::getRank));
-    if (spadeProtector.isPresent()) return spadeProtector;
-    // All cards are hearts / Q♠ — nothing safe to discard, play lowest
-    return validCards.stream().min(Comparator.comparing(Card::getRank));
+    if (spadeProtector.isPresent()) {
+      return Optional.of(
+          CardChoice.of(spadeProtector.get(), "offensive sluff: A♠/K♠ (no safer option)"));
+    }
+    return validCards.stream()
+        .min(Comparator.comparing(Card::getRank))
+        .map(c -> CardChoice.of(c, "offensive sluff: only hearts/Q♠ remain, lowest"));
   }
 
   // ── Offensive pass selection ─────────────────────────────────────────────────
@@ -182,7 +226,6 @@ public class AdaptiveStrategy extends DefensiveStrategy {
       return passable.subList(0, 3);
     }
 
-    // Not enough passable cards — supplement with the least-valuable protected cards
     final List<Card> combined = new ArrayList<>(passable);
     hand.stream()
         .filter(this::isOffensiveKeepCard)
@@ -201,13 +244,15 @@ public class AdaptiveStrategy extends DefensiveStrategy {
 
   // ── Saboteur card selection ──────────────────────────────────────────────────
 
-  Optional<Card> selectSaboteurCard(
+  Optional<CardChoice> selectSaboteurCard(
       final HeartsState state,
       final Player player,
       final Set<Card> validCards,
       final String shooter) {
     if (validCards.isEmpty()) return Optional.empty();
-    if (validCards.size() == 1) return validCards.stream().findFirst();
+    if (validCards.size() == 1) {
+      return validCards.stream().findFirst().map(c -> CardChoice.of(c, "only legal card"));
+    }
 
     final RoundState round = state.getRound();
     final TrickState trick = round.getTrick();
@@ -235,53 +280,65 @@ public class AdaptiveStrategy extends DefensiveStrategy {
       if (shooterHasPlayed || !trickHasHeartsOnly) {
         return Optional.empty(); // defer — no cheap hearts at risk, or shooter already played
       }
-      // Hearts (no Q♠) are in the trick and the shooter hasn't played — steal it preemptively
+      // Hearts (no Q♠) in trick and shooter hasn't played — steal preemptively
       if (StrategyHelper.filterSuit(validCards, trump).findAny().isPresent()) {
-        return StrategyHelper.getMaxRank(validCards, trump);
+        return StrategyHelper.getMaxRank(validCards, trump)
+            .map(c -> CardChoice.of(c, "saboteur: steal hearts trick before shooter plays"));
       }
       return selectSaboteurSafeSluff(validCards);
     }
 
     if (StrategyHelper.filterSuit(validCards, trump).findAny().isPresent()) {
-      // Must follow suit — try to beat the shooter with the highest available card
-      final Optional<Card> beater =
+      // Must follow suit — beat the shooter with the highest available card
+      final Optional<CardChoice> beater =
           currentWinner.flatMap(
               max ->
                   StrategyHelper.filterSuit(validCards, trump)
                       .filter(c -> c.outRanks(max.getRank()))
-                      .max(Comparator.comparing(Card::getRank)));
+                      .max(Comparator.comparing(Card::getRank))
+                      .map(
+                          c ->
+                              CardChoice.of(
+                                  c, "saboteur follow: beat shooter with highest beater")));
       if (beater.isPresent()) return beater;
       // Can't beat — play lowest to minimise points given to the shooter
-      return StrategyHelper.getMinRank(validCards, trump);
+      return StrategyHelper.getMinRank(validCards, trump)
+          .map(c -> CardChoice.of(c, "saboteur follow: can't beat shooter, lowest to minimize"));
     }
 
-    // Void in trump — must sluff; avoid giving the shooter more point cards
+    // Void in trump — sluff safely
     return selectSaboteurSafeSluff(validCards);
   }
 
-  private Optional<Card> selectSaboteurSafeSluff(final Set<Card> validCards) {
+  private Optional<CardChoice> selectSaboteurSafeSluff(final Set<Card> validCards) {
     final Optional<Card> safeCard =
         validCards.stream()
             .filter(c -> c.getSuit() != Suit.HEARTS)
             .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
             .min(Comparator.comparing(Card::getRank));
-    if (safeCard.isPresent()) return safeCard;
-    // Prefer any heart over Q♠ — giving the shooter 13 pts accelerates their moon shot
+    if (safeCard.isPresent()) {
+      return Optional.of(
+          CardChoice.of(safeCard.get(), "saboteur sluff: lowest safe non-point card"));
+    }
     return validCards.stream()
         .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
         .min(Comparator.comparing(Card::getRank))
-        .or(() -> validCards.stream().min(Comparator.comparing(Card::getRank)));
+        .map(c -> CardChoice.of(c, "saboteur sluff: prefer heart over Q♠"))
+        .or(
+            () ->
+                validCards.stream()
+                    .min(Comparator.comparing(Card::getRank))
+                    .map(c -> CardChoice.of(c, "saboteur sluff: forced Q♠")));
   }
 
   // ── Saboteur lead ────────────────────────────────────────────────────────────
 
-  private Optional<Card> selectSaboteurLeadCard(
+  private Optional<CardChoice> selectSaboteurLeadCard(
       final RoundState round, final Player player, final Set<Card> validCards) {
     final List<Card> myHand = round.getHand(player);
     final boolean queenPlayed = StrategyHelper.hasQueenBeenPlayed(round);
-    // Lead the highest non-hearts card we're guaranteed to win (no opponent holds a higher card
-    // of that suit), so the saboteur takes the trick and the shooter doesn't.
-    // Exclude A♠/K♠ while Q♠ is still live — the "guaranteed win" check only considers whether
+    // Lead the highest non-hearts card we're guaranteed to win, so the saboteur takes the trick
+    // and the shooter doesn't. Exclude A♠/K♠ while Q♠ is live — the check only considers whether
     // an opponent holds a higher spade, not whether they're void and could dump Q♠ on the trick.
     return validCards.stream()
         .filter(c -> c.getSuit() != Suit.HEARTS)
@@ -300,20 +357,27 @@ public class AdaptiveStrategy extends DefensiveStrategy {
                 StrategyHelper.filterSuit(round.getRemainingCards(), c.getSuit())
                     .filter(r -> !myHand.contains(r))
                     .noneMatch(r -> r.outRanks(c)))
-        .max(Comparator.comparing(Card::getRank));
+        .max(Comparator.comparing(Card::getRank))
+        .map(c -> CardChoice.of(c, "saboteur lead: guaranteed winner to take trick from shooter"));
   }
 
   // ── Bail-out ─────────────────────────────────────────────────────────────────
 
-  private Optional<Card> selectBailOutCard(final RoundState round, final Set<Card> validCards) {
+  private Optional<CardChoice> selectBailOutCard(
+      final RoundState round, final Set<Card> validCards) {
     if (round.getTrick().getTrump().isPresent()) {
       return Optional.empty(); // not leading — defensive follow/sluff handles this correctly
     }
-    // Leading after a failed moon shot — dump the highest heart to shed dangerous cards
-    return StrategyHelper.getMaxRank(validCards, Suit.HEARTS);
+    return StrategyHelper.getMaxRank(validCards, Suit.HEARTS)
+        .map(c -> CardChoice.of(c, "bail-out: leading highest heart to shed dangerous cards"));
   }
 
   // ── Internal ────────────────────────────────────────────────────────────────
+
+  private void logAndPlay(final HeartsGame game, final Player player, final CardChoice choice) {
+    log.info("[{}] {} plays {} — {}", game.getId(), player.name(), choice.card(), choice.reason());
+    game.playCard(player, choice.card());
+  }
 
   private void evaluateForPass(final HeartsState state, final Player player) {
     final int roundNumber = state.getRound().number();
@@ -327,7 +391,6 @@ public class AdaptiveStrategy extends DefensiveStrategy {
     final int roundNumber = state.getRound().number();
     if (evaluatedPlayRound != roundNumber) {
       evaluatedPlayRound = roundNumber;
-      // Re-evaluate with the post-pass hand; received cards may change viability.
       committedToShoot = HandEvaluator.isShootViable(state.getRound().getHand(player));
     }
   }

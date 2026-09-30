@@ -100,10 +100,10 @@ class AdaptiveStrategySpec extends Specification {
         def state = stateWithHand("alice", hand)
 
         when:
-        def card = strategy.selectOffensiveCard(state, alice, new LinkedHashSet<>(hand))
+        def choice = strategy.selectOffensiveCard(state, alice, new LinkedHashSet<>(hand))
 
         then:
-        card.get() == AH
+        choice.get().card() == AH
     }
 
     def "offensive lead selects guaranteed-win non-heart when no hearts available"() {
@@ -116,14 +116,14 @@ class AdaptiveStrategySpec extends Specification {
         def state = HeartsStateBuilder.state(rounds: [round])
 
         when:
-        def card = strategy.selectOffensiveCard(state, alice, new LinkedHashSet<>(myHand))
+        def choice = strategy.selectOffensiveCard(state, alice, new LinkedHashSet<>(myHand))
 
         then: "leads A♣ — the only card where no opponent holds a higher one"
-        card.get() == AC
+        choice.get().card() == AC
     }
 
-    def "offensive follow plays highest card of trump suit"() {
-        given: "trick led with clubs — alice must follow, plays highest"
+    def "offensive follow plays lowest guaranteed-winning card to preserve high cards"() {
+        given: "trick led with clubs — alice must follow; both K♣ and A♣ win, but K♣ is lowest winner"
         def strategy = new AdaptiveStrategy(true)
         def leadCard = new PlayedCard("bob", _2C)
         def trick = new TrickState(1, "bob", [leadCard])
@@ -132,10 +132,10 @@ class AdaptiveStrategySpec extends Specification {
         def validCards = [AC, KC] as Set
 
         when:
-        def card = strategy.selectOffensiveCard(state, alice, validCards)
+        def choice = strategy.selectOffensiveCard(state, alice, validCards)
 
-        then:
-        card.get() == AC
+        then: "plays K♣ (lowest guaranteed winner) to preserve A♣ for future tricks"
+        choice.get().card() == KC
     }
 
     def "offensive sluff discards lowest safe card and preserves hearts"() {
@@ -149,10 +149,10 @@ class AdaptiveStrategySpec extends Specification {
         def validCards = [AH, _2C] as Set
 
         when:
-        def card = strategy.selectOffensiveCard(state, alice, validCards)
+        def choice = strategy.selectOffensiveCard(state, alice, validCards)
 
         then: "discards the low club, not the heart"
-        card.get() == _2C
+        choice.get().card() == _2C
     }
 
     def "offensive sluff preserves K♠ over A♣ to keep spade protection for Q♠"() {
@@ -164,10 +164,10 @@ class AdaptiveStrategySpec extends Specification {
         def state = HeartsStateBuilder.state(rounds: [round])
 
         when: "valid sluff cards are K♠ and A♣ — K♠ outranks Q♠ so must not be lost"
-        def card = strategy.selectOffensiveCard(state, alice, [KS, AC] as Set)
+        def choice = strategy.selectOffensiveCard(state, alice, [KS, AC] as Set)
 
         then: "sluffs A♣ rather than K♠ to preserve spade protection"
-        card.get() == AC
+        choice.get().card() == AC
     }
 
     def "offensive lead fallback avoids Q♠ when guaranteed-win card does not exist"() {
@@ -179,10 +179,10 @@ class AdaptiveStrategySpec extends Specification {
         def state = HeartsStateBuilder.state(rounds: [round])
 
         when:
-        def card = strategy.selectOffensiveCard(state, alice, new LinkedHashSet<>(myHand))
+        def choice = strategy.selectOffensiveCard(state, alice, new LinkedHashSet<>(myHand))
 
         then: "leads 5♦ rather than Q♠ — leading Q♠ risks handing 13 pts to A♠/K♠ holder"
-        card.get() == c(Suit.DIAMONDS, Rank.FIVE)
+        choice.get().card() == c(Suit.DIAMONDS, Rank.FIVE)
     }
 
     def "offensive sluff plays lowest card when only hearts and Q♠ remain"() {
@@ -195,11 +195,11 @@ class AdaptiveStrategySpec extends Specification {
         def validCards = [AH, KH, QS] as Set
 
         when:
-        def card = strategy.selectOffensiveCard(state, alice, validCards)
+        def choice = strategy.selectOffensiveCard(state, alice, validCards)
 
         then:
-        card.isPresent()
-        validCards.contains(card.get())
+        choice.isPresent()
+        validCards.contains(choice.get().card())
     }
 
     // ── mode resolution ───────────────────────────────────────────────────────────
@@ -311,10 +311,10 @@ class AdaptiveStrategySpec extends Specification {
         def state = HeartsStateBuilder.state(rounds: [round])
 
         when:
-        def card = strategy.selectSaboteurCard(state, alice, [AC, KH] as Set, "bob")
+        def choice = strategy.selectSaboteurCard(state, alice, [AC, KH] as Set, "bob")
 
         then:
-        card.get() == AC
+        choice.get().card() == AC
     }
 
     def "saboteur plays lowest when it cannot beat shooter following hearts"() {
@@ -325,10 +325,10 @@ class AdaptiveStrategySpec extends Specification {
         def state = HeartsStateBuilder.state(rounds: [round])
 
         when:
-        def card = strategy.selectSaboteurCard(state, alice, [QH, NH] as Set, "bob")
+        def choice = strategy.selectSaboteurCard(state, alice, [QH, NH] as Set, "bob")
 
         then: "plays lowest heart to minimise points given to the shooter"
-        card.get() == NH
+        choice.get().card() == NH
     }
 
     def "saboteur sluffs a safe card when shooter is winning the trick"() {
@@ -339,10 +339,10 @@ class AdaptiveStrategySpec extends Specification {
         def state = HeartsStateBuilder.state(rounds: [round])
 
         when:
-        def card = strategy.selectSaboteurCard(state, alice, [AH, _2D] as Set, "bob")
+        def choice = strategy.selectSaboteurCard(state, alice, [AH, _2D] as Set, "bob")
 
         then: "discards 2♦ instead of A♥ to avoid giving the shooter a heart"
-        card.get() == _2D
+        choice.get().card() == _2D
     }
 
     def "saboteur sluff does not dump Q♠ onto the shooter's winning trick when hearts are available"() {
@@ -353,10 +353,10 @@ class AdaptiveStrategySpec extends Specification {
         def state = HeartsStateBuilder.state(rounds: [round])
 
         when: "valid cards are Q♠, K♥, A♥ — no safe non-point option"
-        def card = strategy.selectSaboteurCard(state, alice, [QS, KH, AH] as Set, "bob")
+        def choice = strategy.selectSaboteurCard(state, alice, [QS, KH, AH] as Set, "bob")
 
         then: "sluffs a heart rather than Q♠ to avoid giving the shooter 13 pts"
-        card.get().getSuit() == Suit.HEARTS
+        choice.get().card().getSuit() == Suit.HEARTS
     }
 
     def "saboteur sluff plays Q♠ only as last resort when it is the only card"() {
@@ -367,10 +367,10 @@ class AdaptiveStrategySpec extends Specification {
         def state = HeartsStateBuilder.state(rounds: [round])
 
         when:
-        def card = strategy.selectSaboteurCard(state, alice, [QS] as Set, "bob")
+        def choice = strategy.selectSaboteurCard(state, alice, [QS] as Set, "bob")
 
         then: "has no alternative — plays Q♠"
-        card.get() == QS
+        choice.get().card() == QS
     }
 
     def "saboteur defers to defensive when shooter is not currently winning and trick has no points"() {
@@ -398,10 +398,10 @@ class AdaptiveStrategySpec extends Specification {
         def state = HeartsStateBuilder.state(rounds: [round])
 
         when: "alice has A♣ — highest remaining club; bob (shooter) has not yet played"
-        def card = strategy.selectSaboteurCard(state, alice, [AC, _2D] as Set, "bob")
+        def choice = strategy.selectSaboteurCard(state, alice, [AC, _2D] as Set, "bob")
 
         then: "plays A♣ to steal the 2♥ before bob can win it"
-        card.get() == AC
+        choice.get().card() == AC
     }
 
     def "saboteur does not steal preemptively when Q♠ is in the trick"() {
