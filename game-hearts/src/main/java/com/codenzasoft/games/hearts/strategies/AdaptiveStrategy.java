@@ -54,12 +54,10 @@ public class AdaptiveStrategy extends DefensiveStrategy {
       final Set<Card> validCards) {
     evaluateForPlay(state, player);
     if (committedToShoot && RoundContext.hasMoonShotFailed(state, player.name())) {
-      final Optional<CardChoice> bail = selectBailOutCard(state.getRound(), validCards);
-      if (bail.isPresent()) {
-        logAndPlay(game, player, bail.get());
-      } else {
-        super.yourTurnToPlay(game, state, player, validCards);
-      }
+      // Moon shot failed — revert to full defensive play rather than proactively leading high
+      // hearts. Leading the highest heart wins the trick (we hold A♥/K♥/…) and keeps collecting
+      // points; defensive strategy correctly leads non-hearts first to avoid this.
+      super.yourTurnToPlay(game, state, player, validCards);
       return;
     }
     final Mode mode = resolveMode(state, player);
@@ -359,17 +357,6 @@ public class AdaptiveStrategy extends DefensiveStrategy {
                     .noneMatch(r -> r.outRanks(c)))
         .max(Comparator.comparing(Card::getRank))
         .map(c -> CardChoice.of(c, "saboteur lead: guaranteed winner to take trick from shooter"));
-  }
-
-  // ── Bail-out ─────────────────────────────────────────────────────────────────
-
-  private Optional<CardChoice> selectBailOutCard(
-      final RoundState round, final Set<Card> validCards) {
-    if (round.getTrick().getTrump().isPresent()) {
-      return Optional.empty(); // not leading — defensive follow/sluff handles this correctly
-    }
-    return StrategyHelper.getMaxRank(validCards, Suit.HEARTS)
-        .map(c -> CardChoice.of(c, "bail-out: leading highest heart to shed dangerous cards"));
   }
 
   // ── Internal ────────────────────────────────────────────────────────────────

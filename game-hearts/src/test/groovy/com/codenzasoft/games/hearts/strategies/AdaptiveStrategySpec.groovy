@@ -717,7 +717,11 @@ class AdaptiveStrategySpec extends Specification {
 
     // ── bail-out after failed moon shot ──────────────────────────────────────────
 
-    def "failed moon-shooter leads highest heart to dump dangerous cards"() {
+    def "failed moon-shooter plays defensively: leads non-hearts to avoid winning more heart tricks"() {
+        // After a failed moon shot the bot holds high hearts (K♥ Q♥ J♥ T♥) and Q♠.
+        // Leading the highest heart wins the trick (we hold the highest remaining hearts),
+        // accumulating more points. Defensive play leads clubs to void the suit for dumping Q♠,
+        // allowing high hearts to be sluffed later when opponents lead hearts.
         given: "alice committed to shoot (hand scores ≥ 10); bob won a heart trick — moon shot failed"
         def strategy = new AdaptiveStrategy(true)
         def game = Mock(HeartsGame)
@@ -740,8 +744,12 @@ class AdaptiveStrategySpec extends Specification {
         when:
         strategy.yourTurnToPlay(game, state, alice, new LinkedHashSet<>(hand))
 
-        then: "leads K♥ (highest remaining heart) to shed dangerous cards"
-        1 * game.playCard(alice, KH)
+        then: "leads 2♣ (shortest non-spade suit to create void) rather than a high heart"
+        0 * game.playCard(alice, KH)
+        0 * game.playCard(alice, QH)
+        0 * game.playCard(alice, JH)
+        0 * game.playCard(alice, TH)
+        1 * game.playCard(alice, _2C)
     }
 
     def "failed moon-shooter falls back to defensive when no hearts are valid to lead"() {
