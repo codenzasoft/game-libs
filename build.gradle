@@ -94,10 +94,13 @@ subprojects {
     }
 
     signing {
-        def signingKey = System.getenv('GPG_SIGNING_KEY') ?: project.findProperty('signing.key')
+        // GPG_SIGNING_KEY is stored as base64 in GitHub Secrets; decode it before passing
+        // to useInMemoryPgpKeys which expects the raw ASCII-armored PGP key
+        def signingKeyEncoded = System.getenv('GPG_SIGNING_KEY') ?: project.findProperty('signing.key')
         def signingPassword = System.getenv('GPG_SIGNING_PASSWORD') ?: project.findProperty('signing.password')
-        if (signingKey) {
-            useInMemoryPgpKeys(signingKey as String, signingPassword as String)
+        if (signingKeyEncoded) {
+            def signingKey = new String(java.util.Base64.getDecoder().decode(signingKeyEncoded.trim()))
+            useInMemoryPgpKeys(signingKey, signingPassword as String)
             sign publishing.publications.mavenJava
         }
     }
