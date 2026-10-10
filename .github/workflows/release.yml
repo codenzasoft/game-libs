@@ -33,6 +33,17 @@ jobs:
       - name: Bundle artifacts for Central Portal
         run: |
           cd ~/.m2/repository
+          for dir in \
+            "com/codenzasoft/games/game-common/${RELEASE_VERSION}" \
+            "com/codenzasoft/games/game-hearts/${RELEASE_VERSION}"; do
+            find "${dir}" -type f \
+              ! -name "*.md5" ! -name "*.sha1" \
+              ! -name "*.sha256" ! -name "*.sha512" \
+              ! -name "*.asc" | while read -r f; do
+              md5sum "${f}"  | cut -d' ' -f1 > "${f}.md5"
+              sha1sum "${f}" | cut -d' ' -f1 > "${f}.sha1"
+            done
+          done
           zip -r "$GITHUB_WORKSPACE/bundle.zip" \
             "com/codenzasoft/games/game-common/${RELEASE_VERSION}" \
             "com/codenzasoft/games/game-hearts/${RELEASE_VERSION}"
