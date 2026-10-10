@@ -1,0 +1,43 @@
+name: Release to Maven Central
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Set release version from tag
+        run: echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Build and sign artifacts into local Maven repository
+        run: ./gradlew publishToMavenLocal
+        env:
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
+
+      - name: Bundle artifacts for Central Portal
+        run: |
+          cd ~/.m2/repository
+          zip -r "$GITHUB_WORKSPACE/bundle.zip" com/codenzasoft
+
+      - name: Upload bundle to Maven Central
+        run: |
+          curl --fail-with-body -X POST \
+            "https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC&name=game-libs-${RELEASE_VERSION}" \
+            -H "Authorization: Bearer ${{ secrets.CENTRAL_PORTAL_TOKEN }}" \
+            -F "bundle=@bundle.zip"
