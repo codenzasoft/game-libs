@@ -36,8 +36,11 @@ jobs:
           zip -r "$GITHUB_WORKSPACE/bundle.zip" com/codenzasoft
 
       - name: Upload bundle to Maven Central
+        env:
+          CENTRAL_PORTAL_TOKEN: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
         run: |
+          TOKEN=$(echo "${CENTRAL_PORTAL_TOKEN}" | tr -d '[:space:]')
           curl --fail-with-body -X POST \
             "https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC&name=game-libs-${RELEASE_VERSION}" \
-            -H "Authorization: Bearer ${{ secrets.CENTRAL_PORTAL_TOKEN }}" \
+            -H "Authorization: Bearer ${TOKEN}" \
             -F "bundle=@bundle.zip"
