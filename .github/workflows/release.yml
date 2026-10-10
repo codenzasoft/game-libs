@@ -33,7 +33,9 @@ jobs:
       - name: Bundle artifacts for Central Portal
         run: |
           cd ~/.m2/repository
-          zip -r "$GITHUB_WORKSPACE/bundle.zip" com/codenzasoft
+          zip -r "$GITHUB_WORKSPACE/bundle.zip" \
+            "com/codenzasoft/games/game-common/${RELEASE_VERSION}" \
+            "com/codenzasoft/games/game-hearts/${RELEASE_VERSION}"
 
       - name: Upload bundle to Maven Central
         env:
