@@ -93,6 +93,14 @@ subprojects {
         }
     }
 
+    // Subproject build.gradle sets project.description after the root subprojects{} block runs,
+    // so we patch it into the POM once all scripts have been evaluated.
+    afterEvaluate {
+        publishing.publications.mavenJava.pom {
+            description = project.description
+        }
+    }
+
     signing {
         // GPG_SIGNING_KEY is stored as base64 in GitHub Secrets; decode it before passing
         // to useInMemoryPgpKeys which expects the raw ASCII-armored PGP key
