@@ -1,6 +1,6 @@
 # game-libs
 
-Java libraries for the KingsHand card game engine, published to Maven Central under `com.codenzasoft.games`.
+Java libraries for a Hearts card game engine, published to Maven Central under `com.codenzasoft.games`.
 
 ## Modules
 
