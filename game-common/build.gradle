@@ -1,4 +1,4 @@
-description = 'Common abstractions and utilities shared across KingsHand games'
+description = 'Common abstractions and utilities shared across games'
 
 dependencies {
     // no external dependencies

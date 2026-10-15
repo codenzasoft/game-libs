@@ -1,4 +1,4 @@
-description = 'KingsHand Hearts card game engine — rules, strategies, and game state'
+description = 'Hearts card game engine — rules, strategies, and game state'
 
 dependencies {
     api project(':game-common')
