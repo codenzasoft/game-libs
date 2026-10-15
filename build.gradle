@@ -57,7 +57,7 @@ subprojects {
                 from components.java
                 pom {
                     name = project.name
-                    description = 'KingsHand card game engine and common game utilities'
+                    description = project.description
                     url = 'https://github.com/codenzasoft/game-libs'
                     licenses {
                         license {

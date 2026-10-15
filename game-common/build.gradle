@@ -1,3 +1,5 @@
+description = 'Common abstractions and utilities shared across games'
+
 dependencies {
     // no external dependencies
 }
