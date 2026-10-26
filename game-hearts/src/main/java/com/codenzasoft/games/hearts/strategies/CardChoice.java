@@ -7,9 +7,9 @@ import com.codenzasoft.games.common.cards.Card;
  * explains the logic behind the choice. Used by strategy internals so the play log can emit a
  * human-readable explanation alongside every card played.
  */
-public record CardChoice(Card card, String reason) {
+record CardChoice(Card card, String reason) {
 
-  public static CardChoice of(final Card card, final String reason) {
+  static CardChoice of(final Card card, final String reason) {
     return new CardChoice(card, reason);
   }
 }
