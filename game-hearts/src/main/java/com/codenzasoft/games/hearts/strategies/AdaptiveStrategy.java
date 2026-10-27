@@ -55,12 +55,10 @@ public class AdaptiveStrategy extends DefensiveStrategy {
               .ifPresent(choice -> logAndPlay(game, player, choice));
       case SABOTEUR -> {
         final String shooter = RoundContext.shootingPlayer(state).orElseThrow();
-        final Optional<CardChoice> choice = selectSaboteurCard(state, player, validCards, shooter);
-        if (choice.isPresent()) {
-          logAndPlay(game, player, choice.get());
-        } else {
-          super.yourTurnToPlay(game, state, player, validCards);
-        }
+        selectSaboteurCard(state, player, validCards, shooter)
+            .ifPresentOrElse(
+                choice -> logAndPlay(game, player, choice),
+                () -> super.yourTurnToPlay(game, state, player, validCards));
       }
       case DEFENSIVE -> super.yourTurnToPlay(game, state, player, validCards);
     }
