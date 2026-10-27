@@ -195,10 +195,11 @@ public class AdaptiveStrategy extends DefensiveStrategy {
       return Optional.of(
           CardChoice.of(spadeProtector.get(), "offensive sluff: A♠/K♠ (no safer option)"));
     }
-    // TODO: moon shoot is broken - dump the queen or highest heart.
+    // Only hearts/Q♠ left — moon shot is broken, so dump the highest to shed the most
+    // dangerous point card rather than holding it.
     return validCards.stream()
-        .min(Comparator.comparing(Card::getRank))
-        .map(c -> CardChoice.of(c, "offensive sluff: only hearts/Q♠ remain, lowest"));
+        .max(Comparator.comparing(Card::getRank))
+        .map(c -> CardChoice.of(c, "offensive sluff: shot broken, dump highest point card"));
   }
 
   // ── Offensive pass selection ─────────────────────────────────────────────────
