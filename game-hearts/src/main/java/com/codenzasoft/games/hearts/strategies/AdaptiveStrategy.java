@@ -10,8 +10,6 @@ import com.codenzasoft.games.hearts.RoundState;
 import com.codenzasoft.games.hearts.TrickState;
 import java.util.*;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A Hearts bot that selects a mode at the start of each round and adapts its play accordingly.
@@ -28,8 +26,6 @@ import org.slf4j.LoggerFactory;
  * </ul>
  */
 public class AdaptiveStrategy extends DefensiveStrategy {
-
-  private static final Logger log = LoggerFactory.getLogger(AdaptiveStrategy.class);
 
   private int evaluatedPassRound = -1;
   private int evaluatedPlayRound = -1;
@@ -53,27 +49,18 @@ public class AdaptiveStrategy extends DefensiveStrategy {
       final Player player,
       final Set<Card> validCards) {
     evaluateForPlay(state, player);
-    if (committedToShoot && RoundContext.hasMoonShotFailed(state, player.name())) {
-      // Moon shot failed — revert to full defensive play rather than proactively leading high
-      // hearts. Leading the highest heart wins the trick (we hold A♥/K♥/…) and keeps collecting
-      // points; defensive strategy correctly leads non-hearts first to avoid this.
-      super.yourTurnToPlay(game, state, player, validCards);
-      return;
-    }
-    final Mode mode = resolveMode(state, player);
-    if (mode == Mode.OFFENSIVE) {
-      selectOffensiveCard(state, player, validCards)
-          .ifPresent(choice -> logAndPlay(game, player, choice));
-    } else if (mode == Mode.SABOTEUR) {
-      final String shooter = RoundContext.shootingPlayer(state).orElseThrow();
-      final Optional<CardChoice> choice = selectSaboteurCard(state, player, validCards, shooter);
-      if (choice.isPresent()) {
-        logAndPlay(game, player, choice.get());
-      } else {
-        super.yourTurnToPlay(game, state, player, validCards);
+    switch (resolveMode(state, player)) {
+      case OFFENSIVE ->
+          selectOffensiveCard(state, player, validCards)
+              .ifPresent(choice -> logAndPlay(game, player, choice));
+      case SABOTEUR -> {
+        final String shooter = RoundContext.shootingPlayer(state).orElseThrow();
+        selectSaboteurCard(state, player, validCards, shooter)
+            .ifPresentOrElse(
+                choice -> logAndPlay(game, player, choice),
+                () -> super.yourTurnToPlay(game, state, player, validCards));
       }
-    } else {
-      super.yourTurnToPlay(game, state, player, validCards);
+      case DEFENSIVE -> super.yourTurnToPlay(game, state, player, validCards);
     }
   }
 
@@ -360,11 +347,6 @@ public class AdaptiveStrategy extends DefensiveStrategy {
   }
 
   // ── Internal ────────────────────────────────────────────────────────────────
-
-  private void logAndPlay(final HeartsGame game, final Player player, final CardChoice choice) {
-    log.info("[{}] {} plays {} — {}", game.getId(), player.name(), choice.card(), choice.reason());
-    game.playCard(player, choice.card());
-  }
 
   private void evaluateForPass(final HeartsState state, final Player player) {
     final int roundNumber = state.getRound().number();

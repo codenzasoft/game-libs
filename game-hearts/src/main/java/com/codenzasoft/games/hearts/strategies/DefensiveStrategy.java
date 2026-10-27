@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 
 public class DefensiveStrategy implements HeartsPlayerObserver {
 
-  private static final Logger log = LoggerFactory.getLogger(DefensiveStrategy.class);
+  private final Logger log = LoggerFactory.getLogger(getClass());
 
   @Override
   public void yourTurnToPlay(
@@ -20,17 +20,7 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
       final HeartsState state,
       final Player player,
       final Set<Card> validCards) {
-    selectNextCard(state, player, validCards)
-        .ifPresent(
-            choice -> {
-              log.info(
-                  "[{}] {} plays {} — {}",
-                  game.getId(),
-                  player.name(),
-                  choice.card(),
-                  choice.reason());
-              game.playCard(player, choice.card());
-            });
+    selectNextCard(state, player, validCards).ifPresent(choice -> logAndPlay(game, player, choice));
   }
 
   @Override
@@ -583,5 +573,10 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
                 t.cards().stream()
                     .filter(pc -> pc.player().equals(playerName))
                     .anyMatch(pc -> pc.card().getSuit() != suit));
+  }
+
+  protected void logAndPlay(final HeartsGame game, final Player player, final CardChoice choice) {
+    log.info("[{}] {} plays {} — {}", game.getId(), player.name(), choice.card(), choice.reason());
+    game.playCard(player, choice.card());
   }
 }
