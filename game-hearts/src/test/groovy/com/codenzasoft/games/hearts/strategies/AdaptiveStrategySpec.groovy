@@ -185,21 +185,52 @@ class AdaptiveStrategySpec extends Specification {
         choice.get().card() == c(Suit.DIAMONDS, Rank.FIVE)
     }
 
-    def "offensive sluff plays lowest card when only hearts and Q♠ remain"() {
-        given:
+    def "offensive follow plays lowest trump when unable to win (non-point suit)"() {
+        given: "trick led with clubs — alice must follow; A♣ is winning and alice cannot beat it"
         def strategy = new AdaptiveStrategy(true)
-        def leadCard = new PlayedCard("bob", c(Suit.SPADES, Rank.TWO))
+        def leadCard = new PlayedCard("bob", AC)
         def trick = new TrickState(1, "bob", [leadCard])
         def round = HeartsStateBuilder.inProgressRound(tricks: [trick])
         def state = HeartsStateBuilder.state(rounds: [round])
-        def validCards = [AH, KH, QS] as Set
+        def validCards = [KC, QC] as Set  // neither beats A♣
 
         when:
         def choice = strategy.selectOffensiveCard(state, alice, validCards)
 
-        then:
-        choice.isPresent()
-        validCards.contains(choice.get().card())
+        then: "plays Q♣ (lowest) to preserve K♣ for a future winning trick"
+        choice.get().card() == QC
+    }
+
+    def "offensive follow plays highest trump when unable to win and trump is hearts"() {
+        given: "trick led with hearts — alice must follow; A♥ is winning and alice cannot beat it"
+        def strategy = new AdaptiveStrategy(true)
+        def leadCard = new PlayedCard("bob", AH)
+        def trick = new TrickState(1, "bob", [leadCard])
+        def round = HeartsStateBuilder.inProgressRound(tricks: [trick])
+        def state = HeartsStateBuilder.state(rounds: [round])
+        def validCards = [KH, QH] as Set  // neither beats A♥
+
+        when:
+        def choice = strategy.selectOffensiveCard(state, alice, validCards)
+
+        then: "dumps K♥ (highest) — hearts trump means moon shot is broken, shed the most dangerous card"
+        choice.get().card() == KH
+    }
+
+    def "offensive sluff dumps highest card when only hearts and Q♠ remain"() {
+        given: "trick led with clubs — alice void in clubs, must sluff; only hearts and Q♠ left"
+        def strategy = new AdaptiveStrategy(true)
+        def leadCard = new PlayedCard("bob", _2C)
+        def trick = new TrickState(1, "bob", [leadCard])
+        def round = HeartsStateBuilder.inProgressRound(tricks: [trick])
+        def state = HeartsStateBuilder.state(rounds: [round])
+        def validCards = [AH, KH, QS] as Set  // no clubs — alice must sluff
+
+        when:
+        def choice = strategy.selectOffensiveCard(state, alice, validCards)
+
+        then: "dumps A♥ (highest) — moon shot is broken, shed the most dangerous point card"
+        choice.get().card() == AH
     }
 
     // ── mode resolution ───────────────────────────────────────────────────────────
