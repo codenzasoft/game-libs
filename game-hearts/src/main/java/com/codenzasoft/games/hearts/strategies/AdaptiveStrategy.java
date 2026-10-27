@@ -49,28 +49,20 @@ public class AdaptiveStrategy extends DefensiveStrategy {
       final Player player,
       final Set<Card> validCards) {
     evaluateForPlay(state, player);
-    if (committedToShoot && RoundContext.hasMoonShotFailed(state, player.name())) {
-      // Moon shot failed — revert to full defensive play rather than proactively leading high
-      // hearts. Leading the highest heart wins the trick (we hold A♥/K♥/…) and keeps collecting
-      // points; defensive strategy correctly leads non-hearts first to avoid this.
-      super.yourTurnToPlay(game, state, player, validCards);
-    } else {
-      switch (resolveMode(state, player)) {
-        case OFFENSIVE ->
-            selectOffensiveCard(state, player, validCards)
-                .ifPresent(choice -> logAndPlay(game, player, choice));
-        case SABOTEUR -> {
-          final String shooter = RoundContext.shootingPlayer(state).orElseThrow();
-          final Optional<CardChoice> choice =
-              selectSaboteurCard(state, player, validCards, shooter);
-          if (choice.isPresent()) {
-            logAndPlay(game, player, choice.get());
-          } else {
-            super.yourTurnToPlay(game, state, player, validCards);
-          }
+    switch (resolveMode(state, player)) {
+      case OFFENSIVE ->
+          selectOffensiveCard(state, player, validCards)
+              .ifPresent(choice -> logAndPlay(game, player, choice));
+      case SABOTEUR -> {
+        final String shooter = RoundContext.shootingPlayer(state).orElseThrow();
+        final Optional<CardChoice> choice = selectSaboteurCard(state, player, validCards, shooter);
+        if (choice.isPresent()) {
+          logAndPlay(game, player, choice.get());
+        } else {
+          super.yourTurnToPlay(game, state, player, validCards);
         }
-        case DEFENSIVE -> super.yourTurnToPlay(game, state, player, validCards);
       }
+      case DEFENSIVE -> super.yourTurnToPlay(game, state, player, validCards);
     }
   }
 
