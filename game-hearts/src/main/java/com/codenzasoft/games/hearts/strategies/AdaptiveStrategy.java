@@ -106,10 +106,10 @@ public class AdaptiveStrategy extends DefensiveStrategy {
     }
 
     final Suit trump = maybeTrump.get();
-    if (StrategyHelper.filterSuit(validCards, trump).findAny().isPresent()) {
+    final List<Card> trumpCards =
+        StrategyHelper.filterSuit(validCards, trump).collect(Collectors.toList());
+    if (!trumpCards.isEmpty()) {
       // Follow suit — lowest guaranteed winner to preserve high cards; fall back to highest
-      final List<Card> trumpCards =
-          StrategyHelper.filterSuit(validCards, trump).collect(Collectors.toList());
       final Set<Card> nonThreats = computeNonThreats(state, round, player, trick);
       final List<Card> winners =
           DefiniteCardClassifier.winnersWhenFollowing(trumpCards, trick, round, player, nonThreats);
@@ -118,11 +118,15 @@ public class AdaptiveStrategy extends DefensiveStrategy {
             .min(Comparator.comparing(Card::getRank))
             .map(c -> CardChoice.of(c, "offensive follow: lowest guaranteed winner"));
       }
-      return StrategyHelper.getMaxRank(validCards, trump)
-          .map(
-              c ->
-                  CardChoice.of(
-                      c, "offensive follow: no guaranteed winner, highest to maximize win"));
+      // Hearts/spades trump means the moon shot is already broken — dump the highest to
+      // shed dangerous point cards. For other suits, play the lowest to preserve high
+      // cards for future tricks.
+      if (trump == Suit.HEARTS || trump == Suit.SPADES) {
+        return StrategyHelper.getMaxRank(validCards, trump)
+            .map(c -> CardChoice.of(c, "offensive follow: shot broken, dump highest " + trump));
+      }
+      return StrategyHelper.getMinRank(validCards, trump)
+          .map(c -> CardChoice.of(c, "offensive follow: no winner, lowest to preserve high cards"));
     }
     return selectOffensiveSluff(validCards);
   }
@@ -191,9 +195,11 @@ public class AdaptiveStrategy extends DefensiveStrategy {
       return Optional.of(
           CardChoice.of(spadeProtector.get(), "offensive sluff: A♠/K♠ (no safer option)"));
     }
+    // Only hearts/Q♠ left — moon shot is broken, so dump the highest to shed the most
+    // dangerous point card rather than holding it.
     return validCards.stream()
-        .min(Comparator.comparing(Card::getRank))
-        .map(c -> CardChoice.of(c, "offensive sluff: only hearts/Q♠ remain, lowest"));
+        .max(Comparator.comparing(Card::getRank))
+        .map(c -> CardChoice.of(c, "offensive sluff: shot broken, dump highest point card"));
   }
 
   // ── Offensive pass selection ─────────────────────────────────────────────────
