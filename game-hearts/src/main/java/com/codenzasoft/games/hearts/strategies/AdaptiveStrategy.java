@@ -10,8 +10,6 @@ import com.codenzasoft.games.hearts.RoundState;
 import com.codenzasoft.games.hearts.TrickState;
 import java.util.*;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A Hearts bot that selects a mode at the start of each round and adapts its play accordingly.
@@ -28,8 +26,6 @@ import org.slf4j.LoggerFactory;
  * </ul>
  */
 public class AdaptiveStrategy extends DefensiveStrategy {
-
-  private static final Logger log = LoggerFactory.getLogger(AdaptiveStrategy.class);
 
   private int evaluatedPassRound = -1;
   private int evaluatedPlayRound = -1;
@@ -60,11 +56,13 @@ public class AdaptiveStrategy extends DefensiveStrategy {
       super.yourTurnToPlay(game, state, player, validCards);
     } else {
       switch (resolveMode(state, player)) {
-        case OFFENSIVE -> selectOffensiveCard(state, player, validCards)
-            .ifPresent(choice -> logAndPlay(game, player, choice));
+        case OFFENSIVE ->
+            selectOffensiveCard(state, player, validCards)
+                .ifPresent(choice -> logAndPlay(game, player, choice));
         case SABOTEUR -> {
           final String shooter = RoundContext.shootingPlayer(state).orElseThrow();
-          final Optional<CardChoice> choice = selectSaboteurCard(state, player, validCards, shooter);
+          final Optional<CardChoice> choice =
+              selectSaboteurCard(state, player, validCards, shooter);
           if (choice.isPresent()) {
             logAndPlay(game, player, choice.get());
           } else {
@@ -359,11 +357,6 @@ public class AdaptiveStrategy extends DefensiveStrategy {
   }
 
   // ── Internal ────────────────────────────────────────────────────────────────
-
-  private void logAndPlay(final HeartsGame game, final Player player, final CardChoice choice) {
-    log.info("[{}] {} plays {} — {}", game.getId(), player.name(), choice.card(), choice.reason());
-    game.playCard(player, choice.card());
-  }
 
   private void evaluateForPass(final HeartsState state, final Player player) {
     final int roundNumber = state.getRound().number();
