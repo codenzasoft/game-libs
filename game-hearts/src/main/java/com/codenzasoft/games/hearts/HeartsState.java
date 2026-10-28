@@ -51,11 +51,11 @@ public record HeartsState(
   }
 
   /**
-   * Returns the player seated at the given offset relative to {@code player}.
+   * Returns the player seated in the given pass direction relative to {@code player}.
    *
    * @param player the reference player's name
-   * @param pass the {@link Pass} direction that encodes the offset
-   * @return the name of the player at the computed seat
+   * @param pass the {@link Pass} direction for a which a player is requested
+   * @return the name of the player seated in the given pass direction
    */
   public String getPlayerRelativeTo(final String player, final Pass pass) {
     int index = Math.floorMod(players.indexOf(player) + pass.getOffset(), players.size());
