@@ -103,7 +103,8 @@ public class HeartsGame implements Game<HeartsGame> {
     }
 
     /**
-     * Sets the executor used to dispatch listener notifications off the game-loop thread.
+     * Sets the executor used to dispatch listener notifications off the game-loop thread. An {@link
+     * Executors#newSingleThreadExecutor()} is used by default.
      *
      * @param executor the notification executor
      * @return this builder
