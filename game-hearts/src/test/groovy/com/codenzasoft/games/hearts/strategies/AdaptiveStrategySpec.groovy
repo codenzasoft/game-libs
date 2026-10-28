@@ -217,7 +217,7 @@ class AdaptiveStrategySpec extends Specification {
         choice.get().card() == KH
     }
 
-    def "offensive sluff dumps highest card when only hearts and Q♠ remain"() {
+    def "offensive sluff delegates to defensive when only hearts and Q♠ remain"() {
         given: "trick led with clubs — alice void in clubs, must sluff; only hearts and Q♠ left"
         def strategy = new AdaptiveStrategy(true)
         def leadCard = new PlayedCard("bob", _2C)
@@ -229,8 +229,8 @@ class AdaptiveStrategySpec extends Specification {
         when:
         def choice = strategy.selectOffensiveCard(state, alice, validCards)
 
-        then: "dumps A♥ (highest) — moon shot is broken, shed the most dangerous point card"
-        choice.get().card() == AH
+        then: "delegates to defensive — dumps Q♠ first as the most dangerous card to hold"
+        choice.get().card() == QS
     }
 
     // ── mode resolution ───────────────────────────────────────────────────────────
