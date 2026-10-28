@@ -15,8 +15,8 @@ public abstract class HeartsNotification {
   protected HeartsNotification() {}
 
   /**
-   * Delivers this notification to the given listener, swallowing any exception so a misbehaving
-   * listener cannot disrupt game flow.
+   * Delivers this notification to the given listener, catching and logging any exception so a
+   * misbehaving listener cannot disrupt game flow.
    *
    * @param game the active game
    * @param state the current game state
@@ -26,7 +26,7 @@ public abstract class HeartsNotification {
       final HeartsGame game, final HeartsState state, final HeartsListener listener) {
     try {
       notifyListener(game, state, listener);
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.error("HeartsState notification failed", e);
     }
   }
