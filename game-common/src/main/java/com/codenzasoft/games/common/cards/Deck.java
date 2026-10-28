@@ -28,7 +28,7 @@ public class Deck {
     }
   }
 
-  private List<Card> cards;
+  private final List<Card> cards;
 
   /**
    * Creates a deck from the given list of cards.
@@ -36,7 +36,7 @@ public class Deck {
    * @param cards the cards that form this deck
    */
   public Deck(List<Card> cards) {
-    this.cards = cards;
+    this.cards = new ArrayList<>(cards);
   }
 
   /**
@@ -50,12 +50,7 @@ public class Deck {
 
   /** Shuffles the deck in place using a random ordering. */
   public void shuffle() {
-    List<Card> shuffled = new ArrayList<>();
-    Random random = new Random();
-    while (!cards.isEmpty()) {
-      shuffled.add(cards.remove(random.nextInt(cards.size())));
-    }
-    this.cards = shuffled;
+    Collections.shuffle(cards);
   }
 
   /**
