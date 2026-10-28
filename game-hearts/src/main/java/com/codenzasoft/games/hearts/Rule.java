@@ -11,7 +11,8 @@ public abstract class Rule {
   protected Rule() {}
 
   /**
-   * Returns the set of cards the given player may legally play on their current turn.
+   * Returns the set of cards the given player may legally play on their current turn according to
+   * this rule.
    *
    * @param player the player whose valid cards are being computed
    * @param round the current round state
