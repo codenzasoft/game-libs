@@ -12,6 +12,9 @@ import java.util.stream.Collectors;
 /** A round of hearts must be lead with the 2 of clubs. */
 public class LeadTwoOfClubsRule extends Rule {
 
+  /** Creates a new {@link LeadTwoOfClubsRule}. */
+  public LeadTwoOfClubsRule() {}
+
   @Override
   public Set<Card> getValidCards(final Player player, final RoundState round) {
     final TrickState trick = round.getTrick();

@@ -31,6 +31,7 @@ public class AdaptiveStrategy extends DefensiveStrategy {
   private int evaluatedPlayRound = -1;
   private boolean committedToShoot = false;
 
+  /** Creates a new {@link AdaptiveStrategy}. */
   public AdaptiveStrategy() {}
 
   /** Test constructor: pre-seeds shooting commitment without requiring a game to be played. */

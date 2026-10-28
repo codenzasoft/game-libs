@@ -13,6 +13,9 @@ import java.util.stream.Collectors;
 /** A player cannot lead hearts or queen of spades until a heart has been played. */
 public class LeadTrickRule extends Rule {
 
+  /** Creates a new {@link LeadTrickRule}. */
+  public LeadTrickRule() {}
+
   @Override
   public Set<Card> getValidCards(final Player player, final RoundState round) {
     final TrickState trick = round.getTrick();

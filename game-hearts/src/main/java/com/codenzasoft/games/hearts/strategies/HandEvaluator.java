@@ -28,10 +28,23 @@ public final class HandEvaluator {
 
   private HandEvaluator() {}
 
+  /**
+   * Returns the moon-shooting score for the given hand.
+   *
+   * @param hand the player's dealt hand
+   * @return the total score based on the card weights defined in this class
+   */
   public static int shootingScore(final List<Card> hand) {
     return hand.stream().mapToInt(HandEvaluator::cardScore).sum();
   }
 
+  /**
+   * Returns true if the dealt hand scores at or above {@link #SHOOT_THRESHOLD}, indicating the bot
+   * should attempt to shoot the moon this round.
+   *
+   * @param hand the player's dealt hand
+   * @return true if a moon-shooting attempt is viable
+   */
   public static boolean isShootViable(final List<Card> hand) {
     return shootingScore(hand) >= SHOOT_THRESHOLD;
   }

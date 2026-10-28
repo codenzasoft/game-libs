@@ -42,6 +42,15 @@ public record RoundState(
     List<TrickState> tricks,
     Map<String, List<Card>> hands) {
 
+  /**
+   * Creates an initial round state with the given parameters and no tricks or passes recorded.
+   *
+   * @param number the 1-based round number
+   * @param pass the pass direction for this round
+   * @param dealer the name of the dealer for this round
+   * @param deal the cards dealt to each player, keyed by player name
+   * @return a new initial {@link RoundState}
+   */
   public static RoundState with(
       final int number, final Pass pass, final String dealer, final Map<String, List<Card>> deal) {
     final Map<String, List<Card>> hands = new HashMap<>();
@@ -72,14 +81,30 @@ public record RoundState(
         number, pass, dealer, deal, Collections.unmodifiableMap(nextPasses), false, tricks, hands);
   }
 
+  /**
+   * Returns true if all four players have submitted their pass selections.
+   *
+   * @return true if the pass exchange can be executed
+   */
   public boolean isPassReady() {
     return passes.size() == 4;
   }
 
+  /**
+   * Returns true if the card exchange has been executed and hands updated.
+   *
+   * @return true if passing is complete
+   */
   public boolean isPassComplete() {
     return passComplete;
   }
 
+  /**
+   * Returns the cards selected for passing by the given player.
+   *
+   * @param player the player whose pass selection is requested
+   * @return the three cards to be passed, or null if none submitted yet
+   */
   public List<Card> getPass(final String player) {
     return passes.get(player);
   }
@@ -183,6 +208,11 @@ public record RoundState(
         nextHands);
   }
 
+  /**
+   * Returns true if all cards have been played and the round is finished.
+   *
+   * @return true if no cards remain in any player's hand
+   */
   public boolean isComplete() {
     return countCards(hands()) == 0;
   }
@@ -191,6 +221,12 @@ public record RoundState(
     return hands.values().stream().mapToInt(List::size).sum();
   }
 
+  /**
+   * Returns the given player's current hand.
+   *
+   * @param player the player whose hand is requested
+   * @return the player's remaining cards
+   */
   public List<Card> getHand(final Player player) {
     return hands.get(player.name());
   }
@@ -219,14 +255,29 @@ public record RoundState(
     }
   }
 
+  /**
+   * Returns all cards played so far in this round, in the order they were played.
+   *
+   * @return all played cards across all completed and in-progress tricks
+   */
   public List<Card> getPlayedCards() {
     return tricks.stream().flatMap(t -> t.cards().stream()).map(PlayedCard::card).toList();
   }
 
+  /**
+   * Returns all cards still remaining in any player's hand.
+   *
+   * @return the unplayed cards across all hands
+   */
   public List<Card> getRemainingCards() {
     return hands.values().stream().flatMap(List::stream).toList();
   }
 
+  /**
+   * Returns the score for this round after applying the shoot-the-moon rule if applicable.
+   *
+   * @return a map from player name to points scored this round
+   */
   public Map<String, Integer> getScore() {
     final Map<String, Integer> raw =
         tricks.stream()

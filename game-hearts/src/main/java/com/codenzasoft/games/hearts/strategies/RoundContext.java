@@ -43,6 +43,9 @@ public final class RoundContext {
   /**
    * Returns the player who appears to be shooting the moon, based on accumulated round points.
    * Returns empty if no player meets the applicable threshold or the round is already complete.
+   *
+   * @param state the current game state
+   * @return the name of the apparent shooter, or empty if no one qualifies
    */
   public static Optional<String> shootingPlayer(final HeartsState state) {
     if (state.getCurrentRound().isEmpty()) return Optional.empty();
@@ -71,6 +74,10 @@ public final class RoundContext {
   /**
    * Returns whether the given player's moon-shot attempt has failed — i.e., any completed trick
    * this round with point cards was won by someone else.
+   *
+   * @param state the current game state
+   * @param playerName the name of the player who is attempting to shoot the moon
+   * @return true if the moon shot is no longer possible for this player
    */
   public static boolean hasMoonShotFailed(final HeartsState state, final String playerName) {
     if (state.getCurrentRound().isEmpty()) return false;
@@ -88,6 +95,10 @@ public final class RoundContext {
    *   <li>{@link Mode#SABOTEUR} — another player is the detected shooter
    *   <li>{@link Mode#DEFENSIVE} — no moon-shot threat detected
    * </ul>
+   *
+   * @param state the current game state
+   * @param playerName the name of the player whose mode is being resolved
+   * @return the current strategic mode for this player
    */
   public static Mode resolveMode(final HeartsState state, final String playerName) {
     final Optional<String> shooter = shootingPlayer(state);

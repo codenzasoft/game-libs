@@ -9,9 +9,13 @@ import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/** A Hearts bot that plays and passes cards chosen uniformly at random from the legal options. */
 public class RandomStrategy implements HeartsPlayerObserver {
 
   private static final Logger log = LoggerFactory.getLogger(RandomStrategy.class);
+
+  /** Creates a new {@link RandomStrategy}. */
+  public RandomStrategy() {}
 
   private final Random random = new Random();
 
