@@ -1,10 +1,7 @@
 package com.codenzasoft.games.common;
 
 /**
- * Common lifecycle notifications that any {@link Game} can deliver, regardless of game type. This
- * lets shared services such as the {@code GameCache} and {@code GameService} react to a game's
- * lifecycle (caching it while active, updating games-played statistics when it ends, etc.) without
- * depending on per-game-type listener interfaces.
+ * Common lifecycle notifications that any {@link Game} delivers, regardless of game type.
  *
  * @param <T> The underlying game implementation type, e.g. {@code GameEngine} or {@code
  *     HeartsGame}.
@@ -19,8 +16,7 @@ public interface GameLifecycleObserver<T> {
   void gameStarted(Game<T> game);
 
   /**
-   * Called when a previously started game is resumed, e.g. rebuilt from persisted state after a
-   * cache miss.
+   * Called when a previously started game is resumed, e.g. from a saved state.
    *
    * @param game The game that resumed.
    */
@@ -34,7 +30,7 @@ public interface GameLifecycleObserver<T> {
   void gameOver(Game<T> game);
 
   /**
-   * Called when a game ends because a player quit before it was otherwise over.
+   * Called when a game ends because a player quit before it was naturally over.
    *
    * @param game The game that was quit.
    */
