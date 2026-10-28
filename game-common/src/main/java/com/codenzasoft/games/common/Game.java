@@ -7,16 +7,16 @@ import java.util.UUID;
  * Games of different types implement this interface to support common features.
  *
  * <ul>
- *   <li>Caching in the {@code GameCache}.
- *   <li>Displaying players associated with a game.
+ *   <li>Uniquely identifying a game.
+ *   <li>Associating players with a game.
  * </ul>
  *
- * @param <T> the underlying game implementation type (e.g. {@code HeartsGame} or {@code XoGame})
+ * @param <T> the underlying game implementation type (e.g. {@code HeartsGame})
  */
 public interface Game<T> {
 
   /**
-   * Returns the specific underlying implementation of the game (e.g. {@code XoGame}).
+   * Returns the specific underlying implementation of the game (e.g. {@code HeartsGame}).
    *
    * @return The underlying game.
    */
