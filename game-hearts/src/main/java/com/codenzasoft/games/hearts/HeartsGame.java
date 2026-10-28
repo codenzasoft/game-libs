@@ -464,12 +464,17 @@ public class HeartsGame implements Game<HeartsGame> {
   }
 
   /**
-   * Re-triggers any bots that need to act on the current game state. Called after a game is
-   * restored from persistence so that bot players resume play without waiting for a human action.
+   * Advances play to wherever it should be: starts the first round if none has been dealt, or
+   * re-triggers any bots that need to act on the current game state. This is the single entry point
+   * for both fresh game starts and restores from persistence.
    */
   public synchronized void resumePlay() {
+    if (getGameState().isComplete()) return;
     final RoundState round = getGameState().getCurrentRound().orElse(null);
-    if (round == null) return;
+    if (round == null) {
+      startNewRound();
+      return;
+    }
     if (round.pass() != Pass.KEEPER && !round.isPassComplete()) {
       players.stream()
           .filter(p -> playerObservers.containsKey(p.name()))
