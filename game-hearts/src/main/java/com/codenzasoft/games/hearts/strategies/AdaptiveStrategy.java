@@ -118,15 +118,20 @@ public class AdaptiveStrategy extends DefensiveStrategy {
             .min(Comparator.comparing(Card::getRank))
             .map(c -> CardChoice.of(c, "offensive follow: lowest guaranteed winner"));
       }
-      // Hearts/spades trump means the moon shot is already broken — dump the highest to
-      // shed dangerous point cards. For other suits, play the lowest to preserve high
-      // cards for future tricks.
+      // Hearts/spades trump means the moon shot is already broken — delegate to defensive.
+      // For other suits, play the lowest to preserve high cards for future tricks.
       if (trump == Suit.HEARTS || trump == Suit.SPADES) {
-        return StrategyHelper.getMaxRank(validCards, trump)
-            .map(c -> CardChoice.of(c, "offensive follow: shot broken, dump highest " + trump));
+        return selectNextDefensiveCard(state, player, validCards);
       }
       return StrategyHelper.getMinRank(validCards, trump)
           .map(c -> CardChoice.of(c, "offensive follow: no winner, lowest to preserve high cards"));
+    }
+    // Only point cards left to sluff — moon shot is broken, delegate to defensive.
+    final boolean onlyPointCards =
+        validCards.stream()
+            .allMatch(c -> c.getSuit() == Suit.HEARTS || c.equals(HeartsGame.QUEEN_OF_SPADES));
+    if (onlyPointCards) {
+      return selectNextDefensiveCard(state, player, validCards);
     }
     return selectOffensiveSluff(validCards);
   }
@@ -191,15 +196,7 @@ public class AdaptiveStrategy extends DefensiveStrategy {
             .filter(c -> c.getSuit() != Suit.HEARTS)
             .filter(c -> !c.equals(HeartsGame.QUEEN_OF_SPADES))
             .min(Comparator.comparing(Card::getRank));
-    if (spadeProtector.isPresent()) {
-      return Optional.of(
-          CardChoice.of(spadeProtector.get(), "offensive sluff: A♠/K♠ (no safer option)"));
-    }
-    // Only hearts/Q♠ left — moon shot is broken, so dump the highest to shed the most
-    // dangerous point card rather than holding it.
-    return validCards.stream()
-        .max(Comparator.comparing(Card::getRank))
-        .map(c -> CardChoice.of(c, "offensive sluff: shot broken, dump highest point card"));
+    return spadeProtector.map(c -> CardChoice.of(c, "offensive sluff: A♠/K♠ (no safer option)"));
   }
 
   // ── Offensive pass selection ─────────────────────────────────────────────────

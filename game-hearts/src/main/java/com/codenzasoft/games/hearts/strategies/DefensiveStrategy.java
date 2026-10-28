@@ -20,7 +20,8 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
       final HeartsState state,
       final Player player,
       final Set<Card> validCards) {
-    selectNextCard(state, player, validCards).ifPresent(choice -> logAndPlay(game, player, choice));
+    selectNextDefensiveCard(state, player, validCards)
+        .ifPresent(choice -> logAndPlay(game, player, choice));
   }
 
   @Override
@@ -29,7 +30,7 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     game.setPass(player, selectCardsToPass(state.getRound(), player, state.getRound().pass()));
   }
 
-  private Optional<CardChoice> selectNextCard(
+  protected Optional<CardChoice> selectNextDefensiveCard(
       final HeartsState state, final Player player, final Set<Card> validCards) {
     if (validCards.isEmpty()) {
       return Optional.empty();
