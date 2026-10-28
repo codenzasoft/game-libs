@@ -27,7 +27,7 @@ public record Card(Suit suit, Rank rank) {
   }
 
   /**
-   * Returns true if this card outranks the given card within the same suit.
+   * Returns true if this card outranks the given card independent of suit.
    *
    * @param card the card to compare against
    * @return true if this card's rank is higher
