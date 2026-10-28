@@ -12,8 +12,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A Hearts bot that plays defensively: avoids taking point cards, sheds dangerous high spades, and
- * leads low to avoid winning tricks. Used directly as the default bot and as the base class for
- * {@link AdaptiveStrategy}.
+ * leads low to avoid winning tricks. Used directly as base class for {@link AdaptiveStrategy}.
  */
 public class DefensiveStrategy implements HeartsPlayerObserver {
 
