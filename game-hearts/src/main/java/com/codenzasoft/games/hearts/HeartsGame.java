@@ -342,7 +342,7 @@ public class HeartsGame implements Game<HeartsGame> {
    * Deals a new round, advances the pass direction, notifies listeners, and triggers bots to pass
    * or play.
    */
-  public synchronized void startNewRound() {
+  synchronized void startNewRound() {
     final String dealer =
         getGameState()
             .getCurrentRound()
@@ -386,7 +386,7 @@ public class HeartsGame implements Game<HeartsGame> {
   }
 
   /** Executes the card exchange, notifies listeners, and starts the first trick. */
-  public synchronized void passCards() {
+  synchronized void passCards() {
     setGameState(getGameState().passCards());
     notifyListeners(PASS_COMPLETE_NOTIFICATION);
     startNewTrick();
@@ -395,7 +395,7 @@ public class HeartsGame implements Game<HeartsGame> {
   /**
    * Starts the next trick, notifies listeners, and triggers the leading player's bot if present.
    */
-  public synchronized void startNewTrick() {
+  synchronized void startNewTrick() {
     log.info("[{}] startNewTrick", id);
     setGameState(getGameState().startNewTrick());
     notifyListeners(TRICK_STARTED_NOTIFICATION);
