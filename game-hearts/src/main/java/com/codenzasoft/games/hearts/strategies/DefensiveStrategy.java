@@ -10,9 +10,17 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * A Hearts bot that plays defensively: avoids taking point cards, sheds dangerous high spades, and
+ * leads low to avoid winning tricks. Used directly as the default bot and as the base class for
+ * {@link AdaptiveStrategy}.
+ */
 public class DefensiveStrategy implements HeartsPlayerObserver {
 
   private final Logger log = LoggerFactory.getLogger(getClass());
+
+  /** Creates a new {@link DefensiveStrategy}. */
+  public DefensiveStrategy() {}
 
   @Override
   public void yourTurnToPlay(
@@ -30,6 +38,14 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     game.setPass(player, selectCardsToPass(state.getRound(), player, state.getRound().pass()));
   }
 
+  /**
+   * Selects the next card to play defensively from the given legal cards.
+   *
+   * @param state the current game state
+   * @param player the player whose turn it is
+   * @param validCards the set of cards this player may legally play
+   * @return the chosen card and its reason, or empty if {@code validCards} is empty
+   */
   protected Optional<CardChoice> selectNextDefensiveCard(
       final HeartsState state, final Player player, final Set<Card> validCards) {
     if (validCards.isEmpty()) {
@@ -274,6 +290,14 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
 
   // ── Leading ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Selects a card to lead at the start of a trick.
+   *
+   * @param round the current round state
+   * @param player the player who is leading
+   * @param legalCards the set of cards this player may legally lead
+   * @return the chosen card and its reason, or empty if {@code legalCards} is empty
+   */
   protected Optional<CardChoice> selectLeadCard(
       final RoundState round, final Player player, final Set<Card> legalCards) {
     if (legalCards.size() == 1) {
@@ -388,6 +412,12 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
    *   <li>Fall back to the lowest card in the suit, but only if an opponent can actually beat it —
    *       a guaranteed winner should be skipped so another suit is tried instead.
    * </ol>
+   *
+   * @param round the current round state
+   * @param player the player who is leading
+   * @param suit the suit to lead from
+   * @param legalCards the full set of legal cards this player can lead
+   * @return the chosen card and its reason, or empty if no suitable card exists in {@code suit}
    */
   protected Optional<CardChoice> selectLeadCardOfSuit(
       final RoundState round, final Player player, final Suit suit, final Set<Card> legalCards) {
@@ -431,6 +461,11 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
   /**
    * Returns true if any opponent is known to be void in {@code suit}, determined by inspecting
    * completed tricks in which that suit was led and an opponent played off-suit.
+   *
+   * @param round the current round state
+   * @param suit the suit to check for voids
+   * @param player the current player (excluded from the void check)
+   * @return true if at least one opponent has shown a void in {@code suit}
    */
   protected boolean isAnyOpponentVoidInSuit(
       final RoundState round, final Suit suit, final Player player) {
@@ -446,6 +481,14 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
 
   // ── Passing ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Selects three cards from the player's hand to pass this round.
+   *
+   * @param round the current round state
+   * @param player the player who must pass
+   * @param pass the pass direction for this round
+   * @return a list of exactly three cards to pass
+   */
   protected List<Card> selectCardsToPass(
       final RoundState round, final Player player, final Pass pass) {
     final List<Card> cardsToPass = new ArrayList<>(selectSpadesToPass(round, player));
@@ -508,6 +551,14 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     return result;
   }
 
+  /**
+   * Returns the dangerous spade cards (Q♠, K♠, A♠) to pass when the hand has enough low spades to
+   * afford shedding them.
+   *
+   * @param round the current round state
+   * @param player the player who must pass
+   * @return spades to include in the pass, or an empty list if the hand should keep them
+   */
   protected List<Card> selectSpadesToPass(final RoundState round, final Player player) {
     final List<Card> spades =
         StrategyHelper.filterSuit(round.getHand(player), Suit.SPADES).toList();
@@ -528,6 +579,12 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
    * cards that were passed to an opponent who has already played in this trick — they cannot affect
    * the outcome and should be excluded from the threatening-card set when computing definite
    * winners.
+   *
+   * @param state the current game state
+   * @param round the current round state
+   * @param player the player computing threats
+   * @param trick the current trick state
+   * @return cards known to be non-threatening in this trick, or an empty set if none are known
    */
   protected Set<Card> computeNonThreats(
       final HeartsState state,
@@ -576,6 +633,13 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
                     .anyMatch(pc -> pc.card().getSuit() != suit));
   }
 
+  /**
+   * Logs the play decision and submits the card to the game.
+   *
+   * @param game the game to play the card on
+   * @param player the player who is playing
+   * @param choice the card and reason selected by the strategy
+   */
   protected void logAndPlay(final HeartsGame game, final Player player, final CardChoice choice) {
     log.info("[{}] {} plays {} — {}", game.getId(), player.name(), choice.card(), choice.reason());
     game.playCard(player, choice.card());

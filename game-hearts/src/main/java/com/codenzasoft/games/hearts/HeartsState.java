@@ -31,27 +31,62 @@ public record HeartsState(
     }
   }
 
+  /**
+   * Returns true if the game was quit by a player.
+   *
+   * @return true if {@link #quitBy()} is non-null
+   */
   public boolean isQuit() {
     return quitBy() != null;
   }
 
+  /**
+   * Creates an initial game state for the given players with no rounds played.
+   *
+   * @param players player names in seat order
+   * @return a new initial {@link HeartsState}
+   */
   public static HeartsState with(final List<String> players) {
     return new HeartsState(players, List.of(), false, null);
   }
 
+  /**
+   * Returns the player seated at the given offset relative to {@code player}.
+   *
+   * @param player the reference player's name
+   * @param pass the {@link Pass} direction that encodes the offset
+   * @return the name of the player at the computed seat
+   */
   public String getPlayerRelativeTo(final String player, final Pass pass) {
     int index = Math.floorMod(players.indexOf(player) + pass.getOffset(), players.size());
     return players.get(index);
   }
 
+  /**
+   * Returns the player immediately to the left of {@code player}.
+   *
+   * @param player the reference player's name
+   * @return the name of the player to their left
+   */
   public String getPlayerLeftOf(final String player) {
     return getPlayerRelativeTo(player, Pass.LEFT);
   }
 
+  /**
+   * Returns a new state with the game marked as over.
+   *
+   * @return a copy of this state with {@code isOver} set to true
+   */
   public HeartsState setOver() {
     return new HeartsState(players(), rounds(), true, null);
   }
 
+  /**
+   * Returns a new state with the game marked as quit by {@code quitter}.
+   *
+   * @param quitter the name of the player who quit
+   * @return a copy of this state with {@code quitBy} set to {@code quitter}
+   */
   public HeartsState setQuit(final String quitter) {
     return new HeartsState(players(), rounds(), false, quitter);
   }
@@ -82,6 +117,11 @@ public record HeartsState(
     return new HeartsState(players(), nextRounds, isOver(), quitBy());
   }
 
+  /**
+   * Returns the most recently started round, or empty if no rounds have been played.
+   *
+   * @return the current {@link RoundState}, or empty
+   */
   public Optional<RoundState> getCurrentRound() {
     if (rounds.isEmpty()) {
       return Optional.empty();
@@ -89,14 +129,32 @@ public record HeartsState(
     return Optional.of(rounds.get(rounds.size() - 1));
   }
 
+  /**
+   * Returns the name of the player whose turn it is to act, or empty if the current trick or round
+   * is complete.
+   *
+   * @return the next player's name, or empty
+   */
   public Optional<String> getNextPlayer() {
     return this.getCurrentRound().flatMap(r -> r.getNextPlayer(this));
   }
 
+  /**
+   * Returns the current round state.
+   *
+   * @return the current {@link RoundState}
+   * @throws NoSuchElementException if no rounds have started
+   */
   public RoundState getRound() {
     return getCurrentRound().orElseThrow();
   }
 
+  /**
+   * Returns the most recently started trick of the current round, or empty if no trick is in
+   * progress.
+   *
+   * @return the current {@link TrickState}, or empty
+   */
   public Optional<TrickState> getCurrentTrick() {
     return getCurrentRound().flatMap(RoundState::getCurrentTrick);
   }
@@ -136,6 +194,12 @@ public record HeartsState(
     return nextState;
   }
 
+  /**
+   * Returns the given player's current hand, or an empty list if no round is in progress.
+   *
+   * @param player the player whose hand is requested
+   * @return the player's remaining cards
+   */
   public List<Card> getHand(final Player player) {
     return getCurrentRound().map(r -> r.getHand(player)).orElse(Collections.emptyList());
   }
@@ -147,10 +211,21 @@ public record HeartsState(
     return new HeartsState(players(), nextRounds, isOver(), quitBy());
   }
 
+  /**
+   * Returns true if the game is finished, either by reaching the score limit or by a player
+   * quitting.
+   *
+   * @return true if the game is over or quit
+   */
   public boolean isComplete() {
     return isOver() || isQuit();
   }
 
+  /**
+   * Returns the cumulative scores across all completed rounds.
+   *
+   * @return a map from player name to total points scored
+   */
   public Map<String, Integer> getScore() {
     final Map<String, Integer> scores = new HashMap<>();
     players().forEach(p -> scores.put(p, 0));
@@ -161,11 +236,23 @@ public record HeartsState(
     return Collections.unmodifiableMap(scores);
   }
 
+  /**
+   * Returns the winning player's name if there is a sole winner (lowest cumulative score), or null
+   * if the game is tied or not yet over.
+   *
+   * @return the winner's name, or null
+   */
   public String getWinner() {
     final List<String> leaders = getLeaders();
     return leaders.size() == 1 ? leaders.get(0) : null;
   }
 
+  /**
+   * Returns the names of all tied winners (lowest cumulative score), or an empty list if there is a
+   * sole winner or the game is not yet over.
+   *
+   * @return the tied winners, or an empty list
+   */
   public List<String> getTied() {
     final List<String> leaders = getLeaders();
     return leaders.size() > 1 ? leaders : List.of();

@@ -18,14 +18,37 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * The Hearts card game engine. Manages game state, enforces rules, deals cards, processes passes
+ * and plays, and notifies registered listeners of all state changes.
+ *
+ * <p>Build instances with {@link Builder}:
+ *
+ * <pre>{@code
+ * HeartsGame game = new HeartsGame.Builder()
+ *     .withId(uuid)
+ *     .withPlayers(players)
+ *     .addListener(listener)
+ *     .build();
+ * game.start();
+ * }</pre>
+ */
 public class HeartsGame implements Game<HeartsGame> {
 
   private static final Logger log = LoggerFactory.getLogger(HeartsGame.class);
 
+  /** The Queen of Spades — worth 13 points when taken in a trick. */
   public static final Card QUEEN_OF_SPADES = new Card(Suit.SPADES, Rank.QUEEN);
+
+  /** The Two of Clubs — the card that must lead the first trick. */
   public static final Card TWO_OF_CLUBS = new Card(Suit.CLUBS, Rank.TWO);
 
+  /** Builder for {@link HeartsGame}. */
   public static class Builder {
+
+    /** Creates a new {@link Builder}. */
+    public Builder() {}
+
     private List<Player> players;
     private UUID id;
     private final List<HeartsListener> listeners = new ArrayList<>();
@@ -34,16 +57,34 @@ public class HeartsGame implements Game<HeartsGame> {
     private Executor executor;
     private HeartsState restoredState;
 
+    /**
+     * Sets the players for this game.
+     *
+     * @param players the ordered list of players
+     * @return this builder
+     */
     public Builder withPlayers(final List<Player> players) {
       this.players = players;
       return this;
     }
 
+    /**
+     * Sets the unique identifier for this game.
+     *
+     * @param id the game UUID
+     * @return this builder
+     */
     public Builder withId(final UUID id) {
       this.id = id;
       return this;
     }
 
+    /**
+     * Registers a {@link HeartsListener} to receive all Hearts-specific game-state notifications.
+     *
+     * @param listener the listener to add
+     * @return this builder
+     */
     public Builder addListener(final HeartsListener listener) {
       listeners.add(listener);
       return this;
@@ -52,27 +93,54 @@ public class HeartsGame implements Game<HeartsGame> {
     /**
      * Registers a common {@link GameLifecycleObserver}, notified of game-type-agnostic lifecycle
      * events (started, resumed, over, quit) alongside the Hearts-specific {@link HeartsListener}s.
+     *
+     * @param observer the lifecycle observer to add
+     * @return this builder
      */
     public Builder addLifecycleObserver(final GameLifecycleObserver<HeartsGame> observer) {
       lifecycleObservers.add(observer);
       return this;
     }
 
+    /**
+     * Sets the executor used to dispatch listener notifications off the game-loop thread.
+     *
+     * @param executor the notification executor
+     * @return this builder
+     */
     public Builder withNotificationExecutor(final Executor executor) {
       this.executor = executor;
       return this;
     }
 
+    /**
+     * Registers a {@link HeartsPlayerObserver} to receive turn notifications for the given player.
+     *
+     * @param player the player this observer controls
+     * @param observer the observer to register
+     * @return this builder
+     */
     public Builder addPlayerObserver(final Player player, final HeartsPlayerObserver observer) {
       playerObservers.put(player.name(), observer);
       return this;
     }
 
+    /**
+     * Restores a previously persisted game state instead of starting from scratch.
+     *
+     * @param state the state to restore
+     * @return this builder
+     */
     public Builder withRestoredState(final HeartsState state) {
       this.restoredState = state;
       return this;
     }
 
+    /**
+     * Builds and returns a new {@link HeartsGame}.
+     *
+     * @return the constructed game
+     */
     public HeartsGame build() {
       if (executor == null) {
         withNotificationExecutor(Executors.newSingleThreadExecutor());
@@ -153,6 +221,11 @@ public class HeartsGame implements Game<HeartsGame> {
     this.gameState = gameState;
   }
 
+  /**
+   * Returns the current game state.
+   *
+   * @return the live {@link HeartsState}
+   */
   public HeartsState getGameState() {
     return gameState;
   }
@@ -171,6 +244,13 @@ public class HeartsGame implements Game<HeartsGame> {
     return players;
   }
 
+  /**
+   * Returns the set of cards the given player is allowed to play on their current turn.
+   *
+   * @param player the player whose valid cards are requested
+   * @return a non-empty set of legally playable cards
+   * @throws IllegalStateException if no rule produces any valid cards
+   */
   public Set<Card> getValidCards(final Player player) {
     final RoundState round = getGameState().getCurrentRound().orElseThrow();
     for (final Rule rule : RULES) {
@@ -257,6 +337,10 @@ public class HeartsGame implements Game<HeartsGame> {
     return 0;
   }
 
+  /**
+   * Deals a new round, advances the pass direction, notifies listeners, and triggers bots to pass
+   * or play.
+   */
   public synchronized void startNewRound() {
     final String dealer =
         getGameState()
@@ -285,6 +369,13 @@ public class HeartsGame implements Game<HeartsGame> {
     setGameState(getGameState().startNewRound(dealer, deal));
   }
 
+  /**
+   * Records the given player's pass selection and executes the exchange once all four players have
+   * submitted.
+   *
+   * @param player the player submitting their pass
+   * @param cards the three cards to pass
+   */
   public synchronized void setPass(final Player player, final List<Card> cards) {
     setGameState(getGameState().setPass(player.name(), cards));
     notifyListeners(new HeartsPassSelectedNotification(player, cards));
@@ -293,12 +384,16 @@ public class HeartsGame implements Game<HeartsGame> {
     }
   }
 
+  /** Executes the card exchange, notifies listeners, and starts the first trick. */
   public synchronized void passCards() {
     setGameState(getGameState().passCards());
     notifyListeners(PASS_COMPLETE_NOTIFICATION);
     startNewTrick();
   }
 
+  /**
+   * Starts the next trick, notifies listeners, and triggers the leading player's bot if present.
+   */
   public synchronized void startNewTrick() {
     log.info("[{}] startNewTrick", id);
     setGameState(getGameState().startNewTrick());
@@ -313,6 +408,14 @@ public class HeartsGame implements Game<HeartsGame> {
                     "[{}] startNewTrick: could not determine next player — no trigger sent", id));
   }
 
+  /**
+   * Plays the given card for the given player, advances game state, notifies listeners, and
+   * triggers the next player's bot.
+   *
+   * @param player the player who is playing
+   * @param card the card to play
+   * @throws IllegalStateException if the card is not in the player's valid set
+   */
   public synchronized void playCard(final Player player, final Card card) {
     log.info("[{}] playCard: {} playing {}", id, player.name(), card);
     final Set<Card> validCards = getValidCards(player);
@@ -376,6 +479,11 @@ public class HeartsGame implements Game<HeartsGame> {
     }
   }
 
+  /**
+   * Records a quit by the named player, notifies listeners, and notifies lifecycle observers.
+   *
+   * @param playerName the name of the player who is quitting
+   */
   public synchronized void quit(final String playerName) {
     setGameState(getGameState().setQuit(playerName));
     notifyListeners(GAME_QUIT_NOTIFICATION);

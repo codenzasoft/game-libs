@@ -15,6 +15,15 @@ import java.util.stream.Collectors;
 /** A player must follow the lead suit in a trick if they have the suit. */
 public class FollowSuitRule extends Rule {
 
+  /** Creates a new {@link FollowSuitRule}. */
+  public FollowSuitRule() {}
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>If the player has cards in the led suit, only those cards are valid. On trick 1, point cards
+   * (hearts and Q♠) are excluded unless the player has nothing else.
+   */
   @Override
   public Set<Card> getValidCards(final Player player, final RoundState round) {
     final TrickState trick = round.getTrick();
