@@ -78,8 +78,8 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
    * Selects a card to play when following a non-spades trump suit, using the definite
    * winner/loser/unknown framework.
    *
-   * <p>DEFENSIVE priority: highest definite loser → lowest unknown → lowest definite winner
-   * (forced).
+   * <p>DEFENSIVE priority: highest definite loser → lowest unknown → highest definite winner
+   * (forced — shed the most dangerous high card).
    *
    * <p>Special cases preserved as early exits:
    *
@@ -133,11 +133,12 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
           .or(
               () ->
                   forced.stream()
-                      .min(Comparator.comparing(Card::getRank))
+                      .max(Comparator.comparing(Card::getRank))
                       .map(
                           c ->
                               CardChoice.of(
-                                  c, "all remaining void in " + trump + ": lowest winner")))
+                                  c,
+                                  "all remaining void in " + trump + ": highest winner to shed")))
           .orElseThrow();
     }
 
@@ -148,7 +149,7 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
     final List<Card> unknowns =
         legalCards.stream().filter(c -> !losers.contains(c) && !winners.contains(c)).toList();
 
-    // DEFENSIVE: highest definite loser → lowest unknown → lowest definite winner (forced)
+    // DEFENSIVE: highest definite loser → lowest unknown → highest definite winner (shed danger)
     return losers.stream()
         .max(Comparator.comparing(Card::getRank))
         .map(c -> CardChoice.of(c, "definite loser: highest to dump safely"))
@@ -160,8 +161,8 @@ public class DefensiveStrategy implements HeartsPlayerObserver {
         .or(
             () ->
                 winners.stream()
-                    .min(Comparator.comparing(Card::getRank))
-                    .map(c -> CardChoice.of(c, "forced winner: lowest to minimize impact")))
+                    .max(Comparator.comparing(Card::getRank))
+                    .map(c -> CardChoice.of(c, "forced winner: highest to shed dangerous card")))
         .orElseThrow();
   }
 
