@@ -76,6 +76,58 @@ class DefensiveStrategySpec extends Specification {
         1 * game.playCard(alice, _2C)
     }
 
+    def "followTrump plays highest when all clubs are forced winners (last player, points in trick)"() {
+        given: "trick 5, bob led 2♣; carol sluffed 3♥; dave played 4♣ (current winner); alice is last with K♣ and 7♣"
+        def strategy = new DefensiveStrategy()
+        def game = Mock(HeartsGame)
+        def trick = new TrickState(5, "bob", [
+            new PlayedCard("bob",   _2C),
+            new PlayedCard("carol", c(Suit.HEARTS, Rank.THREE)),
+            new PlayedCard("dave",  c(Suit.CLUBS,  Rank.FOUR)),
+        ])
+        def round = roundWithTrick("alice", [KC, _7C], trick)
+        def state = HeartsStateBuilder.state(rounds: [round])
+
+        when:
+        strategy.yourTurnToPlay(game, state, alice, [KC, _7C] as Set)
+
+        then: "plays K♣ (highest forced winner) to shed the dangerous high card, not 7♣"
+        1 * game.playCard(alice, KC)
+    }
+
+    def "followTrump plays highest winner when all opponents are void in suit (all-void optimisation)"() {
+        given: "bob and dave shown void in clubs from trick 1; trick 2: bob led 2♣; alice last with K♣ and 7♣"
+        def strategy = new DefensiveStrategy()
+        def game = Mock(HeartsGame)
+        // trick 1: clubs led, bob and dave sluffed off-suit — both now void in clubs
+        def voidTrick = new TrickState(1, "alice", [
+            new PlayedCard("alice", _3C),
+            new PlayedCard("bob",   c(Suit.DIAMONDS, Rank.TWO)),
+            new PlayedCard("carol", c(Suit.CLUBS,    Rank.FOUR)),
+            new PlayedCard("dave",  c(Suit.DIAMONDS, Rank.THREE)),
+        ])
+        def currentTrick = new TrickState(2, "bob", [
+            new PlayedCard("bob",   _2C),
+            new PlayedCard("carol", c(Suit.HEARTS,   Rank.THREE)),
+        ])
+        // alice is 3rd of 4; dave (4th) is void in clubs, so all-void optimisation kicks in
+        def hands = [
+            "alice": [KC, _7C],
+            "bob":   [],
+            "carol": [],
+            "dave":  [],
+        ]
+        def round = new RoundState(1, Pass.KEEPER, "bob", hands, [:], true,
+                                   [voidTrick, currentTrick], hands)
+        def state = HeartsStateBuilder.state(rounds: [round])
+
+        when:
+        strategy.yourTurnToPlay(game, state, alice, [KC, _7C] as Set)
+
+        then: "plays K♣ (highest forced winner to shed) rather than 7♣"
+        1 * game.playCard(alice, KC)
+    }
+
     // ── followSpades: duck when points are in the trick ──────────────────────────
 
     def "followSpades ducks under the current trick winner when hearts have been sluffed (last player)"() {
